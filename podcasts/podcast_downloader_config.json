@@ -1,0 +1,15 @@
+{
+    "if_directory_empty": "download_from_30000_days",
+    "podcasts": [
+        {
+            "name": "digitalkompakt",
+            "rss_link": "https://digitalkompakt.podigee.io/feed/mp3",
+            "path": "data/digitalkompakt"
+        },
+        {
+            "name": "chaosradio",
+            "rss_link": "https://chaosradio.de/feed/opus",
+            "path": "data/chaosradio"
+        }
+    ]
+}
