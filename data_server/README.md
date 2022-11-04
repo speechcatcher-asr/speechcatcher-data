@@ -1,5 +1,5 @@
-How to create the Postgres
+# How to create the Postgres schema
 
-Create a new database, e.g. speechcatcher and then:
+Create a new user and database, e.g. speechcatcher and then:
 
-psql -d speechcatcher < schema.psql
+sudo -u speechatcher psql -d speechcatcher < schema.psql
