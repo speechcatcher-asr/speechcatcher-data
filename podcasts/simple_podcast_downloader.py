@@ -96,9 +96,9 @@ def parse_and_download(feed_url):
 
         # CREATE TABLE IF NOT EXISTS podcasts (podcast_episode_id serial PRIMARY KEY, podcast_title TEXT, episode_title TEXT, authors TEXT, language VARCHAR(16), description TEXT, keywords TEXT, episode_url TEXT, cache_url TEXT, cache_file TEXT, transcript_file TEXT, duration REAL, type VARCHAR(64), episode_json JSON);
 
-        sql = "INSERT INTO podcasts(podcast_title, episode_title, authors, language, description, keywords, episode_url," \
-              " cache_url, cache_file, transcript_file, duration, type, episode_json) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)"
-        p_cursor.execute(sql, (podcast_title, episode_title, authors, language, desc, joined_tags, link, cache_url, cache_file, transcript_file, str(duration), mytype, episode_json))
+        sql = "INSERT INTO podcasts(podcast_title, episode_title, published_date, authors, language, description, keywords, episode_url," \
+              " cache_url, cache_file, transcript_file, duration, type, episode_json) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)"
+        p_cursor.execute(sql, (podcast_title, episode_title, published, authors, language, desc, joined_tags, link, cache_url, cache_file, transcript_file, str(duration), mytype, episode_json))
 
 if __name__ == "__main__":
     config = load_config()
