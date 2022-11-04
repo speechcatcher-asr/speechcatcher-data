@@ -99,6 +99,7 @@ def parse_and_download(feed_url):
         sql = "INSERT INTO podcasts(podcast_title, episode_title, published_date, authors, language, description, keywords, episode_url," \
               " cache_url, cache_file, transcript_file, duration, type, episode_json) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)"
         p_cursor.execute(sql, (podcast_title, episode_title, published, authors, language, desc, joined_tags, link, cache_url, cache_file, transcript_file, str(duration), mytype, episode_json))
+    p_connection.commit()
 
 if __name__ == "__main__":
     config = load_config()
