@@ -44,6 +44,16 @@ def connect_to_db(database, user, password, host='127.0.0.1', port='5432'):
         print ("Error while connecting to PostgreSQL", error)
         sys.exit(-1)
 
+def check_audio_url(cursor, episode_audio_url):
+    cursor.execute('SELECT episode_audio_url, cache_audio_url, cache_audio_file,'\
+                   'transcript_file from podcasts where episode_audio_url=%s', (episode_audio_url,) )
+    record = cursor.fetchone()
+    if record is not None and len(record) > 0:
+        episode_audio_url, cache_audio_url, cache_audio_file, transcript_file = record[0]
+        print(f'Url {episode_audio_url} already in the database with {cache_audio_url=} {cache_audio_file=} {transcript_file=}')
+        return True
+    return False
+
 def parse_and_download(feed_url):
     d = feedparser.parse(test_feed_url)
 
@@ -57,13 +67,16 @@ def parse_and_download(feed_url):
         tags = []
         duration = -1
         link = ''
+        audiolink = ''
 
         # find the audio link in the links section
         for elem in episode["links"]:
             if elem["type"].startswith("audio"):
                 mytype = elem["type"]
+                audiolink = elem["href"]
+            elif elem["type"].startswith("text/html"):
                 link = elem["href"]
-        
+
         # add tags (keywords) to list if available
         if 'tags' in episode: 
             for tag in episode['tags']:
@@ -89,16 +102,17 @@ def parse_and_download(feed_url):
         cache_file = ''
         transcript_file = ''
 
-        # delte timedelta objects (parsed dates), since the json.dumps function can't handle them
+        # Use default=str for delta timedelta objects (parsed dates), since the json.dumps function can't handle them otherwise
         episode_json = json.dumps(episode, default=str) 
 
-        print(f"{mytype=}, {episode_title=}, {authors=}, {joined_tags}, {duration=}, {link=}, {published=}")
+        #print(episode_json)
+        print(f"{mytype=}, {episode_title=}, {authors=}, {joined_tags}, {duration=}, {link=}, {audiolink=} {published=}")
 
-        # CREATE TABLE IF NOT EXISTS podcasts (podcast_episode_id serial PRIMARY KEY, podcast_title TEXT, episode_title TEXT, authors TEXT, language VARCHAR(16), description TEXT, keywords TEXT, episode_url TEXT, cache_url TEXT, cache_file TEXT, transcript_file TEXT, duration REAL, type VARCHAR(64), episode_json JSON);
+        if not check_audio_url(p_cursor, episode_audio_url=audiolink):
+            sql = "INSERT INTO podcasts(podcast_title, episode_title, published_date, authors, language, description, keywords, episode_url, episode_audio_url," \
+                  " cache_audio_url, cache_audio_file, transcript_file, duration, type, episode_json) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)"
+            p_cursor.execute(sql, (podcast_title, episode_title, published, authors, language, desc, joined_tags, link, audiolink, cache_url, cache_file, transcript_file, str(duration), mytype, episode_json))
 
-        sql = "INSERT INTO podcasts(podcast_title, episode_title, published_date, authors, language, description, keywords, episode_url," \
-              " cache_url, cache_file, transcript_file, duration, type, episode_json) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)"
-        p_cursor.execute(sql, (podcast_title, episode_title, published, authors, language, desc, joined_tags, link, cache_url, cache_file, transcript_file, str(duration), mytype, episode_json))
     p_connection.commit()
 
 if __name__ == "__main__":
