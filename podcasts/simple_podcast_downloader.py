@@ -49,8 +49,8 @@ def check_audio_url(cursor, episode_audio_url):
                    'transcript_file from podcasts where episode_audio_url=%s', (episode_audio_url,) )
     record = cursor.fetchone()
     if record is not None and len(record) > 0:
-        episode_audio_url, cache_audio_url, cache_audio_file, transcript_file = record[0]
-        print(f'Url {episode_audio_url} already in the database with {cache_audio_url=} {cache_audio_file=} {transcript_file=}')
+        episode_audio_url, cache_audio_url, cache_audio_file, transcript_file = record
+        print(f'Skipping, URL already in the database: {episode_audio_url} with {cache_audio_url=} {cache_audio_file=} {transcript_file=}')
         return True
     return False
 
