@@ -8,16 +8,19 @@ import time
 import os
 import traceback
 
-test_feed_url = "https://digitalkompakt.podigee.io/feed/mp3"
-#test_feed_url = "https://logbuch-netzpolitik.de/feed/opus"
-
 # TODO: make these configurable
 language = 'de'
+rss_feed_list = 'rss_feeds_de'
+
 destination_folder = f'/var/www/speechcatcher.net/cache/podcasts/{language}'
 destination_url = f'https://speechcatcher.net/cache/podcasts/{language}'
 
 p_connection = None
 p_cursor = None
+
+def load_feeds(list_file):
+    with open(list_file) as list_file_in:
+        return [elem.rstrip('\n') for elem in list_file_in]
 
 def ensure_dir(f):
     d = os.path.dirname(f)
@@ -66,7 +69,7 @@ def check_audio_url(cursor, episode_audio_url):
     return False
 
 def parse_and_download(feed_url):
-    d = feedparser.parse(test_feed_url)
+    d = feedparser.parse(feed_url)
 
     podcast_title = d.feed['title']
 
@@ -141,6 +144,7 @@ def parse_and_download(feed_url):
                 sql = "INSERT INTO podcasts(podcast_title, episode_title, published_date, retrieval_time, authors, language, description, keywords, episode_url, episode_audio_url," \
                   " cache_audio_url, cache_audio_file, transcript_file, duration, type, episode_json) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)"
                 p_cursor.execute(sql, (podcast_title, episode_title, published, str(retrieval_time), authors, language, desc, joined_tags, link, audiolink, cache_url, cache_file, transcript_file, str(duration), mytype, episode_json))
+                p_connection.commit()
             except:
                 print('Error occured while trying to download:', audiolink)
                 traceback.print_exc()
@@ -151,4 +155,10 @@ if __name__ == "__main__":
     config = load_config()
     ensure_dir(destination_folder)
     p_connection, p_cursor = connect_to_db(database=config["database"], user=config["user"], password=config["password"], host=config["host"], port=config["port"])
-    parse_and_download(test_feed_url)
+    
+    rss_feeds_de_list = load_feeds(rss_feed_list)
+
+    for feed_url in rss_feeds_de_list:
+        print('Downloading from:', feed_url)
+        time.sleep(1)
+        parse_and_download(feed_url)
