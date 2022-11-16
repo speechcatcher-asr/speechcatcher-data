@@ -7,7 +7,7 @@ import psycopg2
 import time
 import os
 import traceback
-from utils import load_config,  
+from utils import load_config, connect_to_db 
 
 # TODO: make these configurable
 language = 'de'
