@@ -1,9 +1,14 @@
+import yaml
+import psycopg2
+import traceback
+
 def load_config(config_filename='config.yaml'):
     with open("config.yaml", "r") as stream:
         try:
             return yaml.safe_load(stream)
         except yaml.YAMLError as exc:
             print(exc)
+            traceback.print_exc()
             sys.exit(-3)
 
 def connect_to_db(database, user, password, host='127.0.0.1', port='5432'):
@@ -26,5 +31,6 @@ def connect_to_db(database, user, password, host='127.0.0.1', port='5432'):
 
     except (Exception, psycopg2.Error) as error :
         print ("Error while connecting to PostgreSQL", error)
+        traceback.print_exc()
         sys.exit(-1)
  
