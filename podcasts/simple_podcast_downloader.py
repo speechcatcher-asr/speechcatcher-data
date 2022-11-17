@@ -11,7 +11,7 @@ from utils import load_config, connect_to_db
 
 # TODO: make these configurable
 language = 'de'
-rss_feed_list = 'rss_feeds_de'
+rss_feed_list = 'rss_feeds_de2'
 
 destination_folder = f'/var/www/speechcatcher.net/cache/podcasts/{language}'
 destination_url = f'https://speechcatcher.net/cache/podcasts/{language}'
@@ -37,6 +37,14 @@ def check_audio_url(cursor, episode_audio_url):
         print(f'Skipping, URL already in the database: {episode_audio_url} with {cache_audio_url=} {cache_audio_file=} {transcript_file=}')
         return True
     return False
+
+# 'https://chtbl.com/track/E43E46/https://lcdn.letscast.fm/media/podcast/62368df4/episode/3b2c0786.mp3?t=1618380826' 
+def remove_tracking_link(audiolink):
+    if audiolink.count('https://') >= 2:
+        audiolink = 'https://' + audiolink.split('https://')[-1]
+    elif audiolink.count('http://') >= 2:
+        audiolink = 'http://' + audiolink.split('http://')[-1]
+    return audiolink
 
 def parse_and_download(feed_url):
     d = feedparser.parse(feed_url)
@@ -65,6 +73,9 @@ def parse_and_download(feed_url):
             elif elem["type"].startswith("text/html"):
                 link = elem["href"]
 
+        # remove tracking link that makes downloading impossible
+        audiolink = remove_tracking_link(audiolink)
+
         # add tags (keywords) to list if available
         if 'tags' in episode: 
             for tag in episode['tags']:
@@ -74,6 +85,10 @@ def parse_and_download(feed_url):
         # we convert everything to seconds
         if 'itunes_duration' in episode:
             duration = episode['itunes_duration']
+
+            if duration == '':
+                print('Warning, skipping this episode since duration is empty.')
+                continue
 
             if ':' in duration:
                 dur_split = duration.split(':')
