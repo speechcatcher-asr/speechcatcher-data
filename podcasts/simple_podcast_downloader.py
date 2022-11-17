@@ -97,9 +97,11 @@ def parse_and_download(feed_url):
             # Try to download audiolink and insert into db if succesful
             try:
                 audiolink_split = audiolink.split('?')
-                assert(len(audiolink_split) == 2)
+                assert(len(audiolink_split) <= 2)
+                
                 audio_filename = audiolink_split[0].split('/')[-1]
                 assert(len(audio_filename) > 0)
+
                 # insert unixtime to guarantee that the link is unique
                 retrieval_time = time.time()
                 unixtime = str(int(retrieval_time))
