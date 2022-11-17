@@ -77,8 +77,11 @@ def parse_and_download(feed_url):
 
             if ':' in duration:
                 dur_split = duration.split(':')
-                assert(len(dur_split) == 3)
-                duration = int(dur_split[0])*3600 + int(dur_split[1])*60 + int(dur_split[2])
+                assert(len(dur_split) <= 3)
+                if len(dur_split) == 3: # hh:mm:ss
+                    duration = int(dur_split[0])*3600 + int(dur_split[1])*60 + int(dur_split[2])
+                elif len(dur_split) == 2: # mm:ss
+                    duration = int(dur_split[0])*60 + int(dur_split[1])
             else:
                 duration = int(duration)
         else:
@@ -118,7 +121,9 @@ def parse_and_download(feed_url):
                 unixtime = str(int(retrieval_time))
                 cache_file = destination_folder  + '/' + unixtime + '_' + audio_filename
                 cache_url = destination_url + '/' + unixtime + '_' + audio_filename 
-                
+        
+                assert(os.path.exists(cache_file) == False)
+
                 print('Downloading to:', cache_file)
                 print('Cache file will be available at:', cache_url)
                 wget.download(audiolink, out=cache_file, bar=wget.bar_thermometer)
