@@ -43,6 +43,10 @@ def parse_and_download(feed_url):
 
     podcast_title = d.feed['title']
 
+    feed_authors = 'N/A'
+    if 'author' in d.feed:
+        feed_authors = d.feed['author']
+
     for episode in d.entries:
 
         episode_title = episode["title"]    
@@ -79,8 +83,15 @@ def parse_and_download(feed_url):
                 duration = int(duration)
         else:
             print('Warning: no itunes_duration in episode')
-        
-        authors = ' '.join(author["name"] for author in episode["authors"])
+        print(episode) 
+
+        # some feeds have episode authors, some don't
+        # if available take them, if not, use the overall feed author information
+        if "authors" in episode:
+            authors = ' '.join(author["name"] for author in episode["authors"])
+        else:
+            authors = feed_authors
+
         joined_tags = ', '.join(tags)
         cache_url = ''
         cache_file = ''
