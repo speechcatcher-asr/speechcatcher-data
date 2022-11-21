@@ -11,7 +11,8 @@ from utils import load_config, connect_to_db
 
 # TODO: make these configurable
 language = 'de'
-rss_feed_list = 'rss_feeds_de2'
+rss_feed_list = 'podcast_lists/rss_feeds_de_news'
+rss_feed_list = 'podcast_lists/letscast_fm_featured_de'
 
 destination_folder = f'/var/www/speechcatcher.net/cache/podcasts/{language}'
 destination_url = f'https://speechcatcher.net/cache/podcasts/{language}'
@@ -19,15 +20,18 @@ destination_url = f'https://speechcatcher.net/cache/podcasts/{language}'
 p_connection = None
 p_cursor = None
 
+# loads a new line seperated text file with a list of feeds
 def load_feeds(list_file):
     with open(list_file) as list_file_in:
         return [elem.rstrip('\n') for elem in list_file_in]
 
+# creates dir f if it doesnt exist
 def ensure_dir(f):
     d = os.path.dirname(f)
     if not os.path.exists(d):
         os.makedirs(d)
 
+# checks if an audio url is already in the db
 def check_audio_url(cursor, episode_audio_url):
     cursor.execute('SELECT episode_audio_url, cache_audio_url, cache_audio_file,'\
                    'transcript_file from podcasts where episode_audio_url=%s', (episode_audio_url,) )
@@ -38,6 +42,7 @@ def check_audio_url(cursor, episode_audio_url):
         return True
     return False
 
+# Some audio links include a weird sort of tracking link that this function removes
 # 'https://chtbl.com/track/E43E46/https://lcdn.letscast.fm/media/podcast/62368df4/episode/3b2c0786.mp3?t=1618380826' 
 def remove_tracking_link(audiolink):
     if audiolink.count('https://') >= 2:
@@ -46,15 +51,24 @@ def remove_tracking_link(audiolink):
         audiolink = 'http://' + audiolink.split('http://')[-1]
     return audiolink
 
+# parse feed feed_url and download all episodes
 def parse_and_download(feed_url):
     d = feedparser.parse(feed_url)
 
+    # If we cant find at least a podcast title, something went wrong or feed_url isnt a RSS feed
+    # in this case we just print a warning and skip downloading anything
+    if not 'title' in d.feed:
+        print('Skipping {feed_url=}, no title found. Maybe not a rss feed?')
+        return
+
     podcast_title = d.feed['title']
 
+    # Try to find the podcast author
     feed_authors = 'N/A'
     if 'author' in d.feed:
         feed_authors = d.feed['author']
 
+    # gather meta data for each episode and start downloading
     for episode in d.entries:
 
         episode_title = episode["title"]    
