@@ -9,10 +9,14 @@ p_connection, p_cursor = None, None
 
 app = Flask(__name__)
 api_version = '/apiv1'
+api_secret_key = ''
 
-@app.route(api_version + '/get_work/<language>', methods=['GET'])
-def get_work(language):
+@app.route(api_version + '/get_work/<language>/<api_access_key>', methods=['GET'])
+def get_work(language, api_access_key):
    
+    if api_secret_key != api_access_key:
+        return jsonify({'error':'api_access_key invalid'})
+
     #CREATE TABLE IF NOT EXISTS podcasts (podcast_episode_id serial PRIMARY KEY, podcast_title TEXT, episode_title TEXT, published_date TEXT, retrieval_time DECIMAL, authors TEXT, language|
 #     VARCHAR(16), description TEXT, keywords TEXT, episode_url TEXT, episode_audio_url TEXT, cache_audio_url TEXT, cache_audio_file TEXT, transcript_file TEXT, duration REAL, type VARCHAR|
  #    (64), episode_json JSON);
@@ -51,17 +55,50 @@ def get_work(language):
 
     return jsonify(return_dict)
 
-@app.route(api_version + '/register_wip/<wid>', methods=['GET'])
-def register_wip(wid):
+@app.route(api_version + '/register_wip/<wid>/<api_access_key>', methods=['GET'])
+def register_wip(wid, api_access_key):
+
+    if api_secret_key != api_access_key:
+        return jsonify({'error':'api_access_key invalid'})
+
+    p_cursor.execute('SELECT podcast_episode_id, transcript_file FROM podcasts WHERE podcast_episode_id=%s', (str(wid),))
+    record = p_cursor.fetchone()
+
+    podcast_episode_id, transcript_file = record
+
+    if transcript_file == 'in_progress':
+        return jsonify({'success': False, 'error': str(wid)+' already in progress'})
+    elif transcript_file != '':
+        return jsonify({'success': False, 'error': str(wid)+' already transcribed'})
+
+    p_cursor.execute("UPDATE podcasts SET transcript_file = 'in_progress' WHERE podcast_episode_id=%s" , (str(wid),))
+    p_connection.commit()
+
+    return jsonify({'success': True})
+
+@app.route(api_version + '/upload_result/<wid>/<api_access_key>', methods=['POST'])
+def upload_result(wid, api_access_key):
     return
 
-@app.route(api_version + '/upload_result/<wid>', methods=['GET'])
-def upload_result(wid):
-    return
+@app.route(api_version + '/cancel_work/<wid>/<api_access_key>', methods=['GET'])
+def cancel_work(wid, api_access_key):
+    if api_secret_key != api_access_key:
+        return jsonify({'error':'api_access_key invalid'})
 
-@app.route(api_version + '/cancel_work/<wid>', methods=['GET'])
-def cancel_work(wid):
-    return
+    p_cursor.execute('SELECT podcast_episode_id, transcript_file FROM podcasts WHERE podcast_episode_id=%s', (str(wid),))
+    record = p_cursor.fetchone()
+
+    podcast_episode_id, transcript_file = record
+
+    if transcript_file != 'in_progress':
+        if transcript_file != '':
+            return jsonify({'success': False, 'error': str(wid)+' already transcribed'})
+        return jsonify({'success': False, 'error': str(wid)+' not in progress'})
+
+    p_cursor.execute("UPDATE podcasts SET transcript_file = '' WHERE podcast_episode_id=%s" , (str(wid),))
+    p_connection.commit()
+
+    return jsonify({'success': True})
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Work distribution server for mass transcription jobs')
@@ -73,6 +110,8 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     config = load_config()
+    api_secret_key = config["secret_api_key"]
+
     p_connection, p_cursor = connect_to_db(database=config["database"], user=config["user"], password=config["password"], host=config["host"], port=config["port"])
 
     if args.debug:
