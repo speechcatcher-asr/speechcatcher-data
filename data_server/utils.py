@@ -2,8 +2,8 @@ import yaml
 import psycopg2
 import traceback
 
-def load_config(config_filename='config.yaml'):
-    with open("config.yaml", "r") as stream:
+def load_config(config_filename='../config.yaml'):
+    with open(config_filename, "r") as stream:
         try:
             return yaml.safe_load(stream)
         except yaml.YAMLError as exc:
