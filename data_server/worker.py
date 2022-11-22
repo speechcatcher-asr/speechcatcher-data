@@ -49,8 +49,9 @@ def transcribe_loop(server, language, secret_api_key, model='small', api_version
         
         print(f'{confirm_work_url=}')
 
-        resp = requests.get(url=get_work_url)
+        resp = requests.get(url=confirm_work_url)
         data = resp.json()
+        print('Confirmed:', data)
         assert(data['success'] == True)
         wip = True
 
@@ -75,6 +76,10 @@ def transcribe_loop(server, language, secret_api_key, model='small', api_version
         wip = False
         vtt_str = fi.read()
         fi.close()
+        
+        # Cleanup, just making sure data doesnt get mixed up in the next iteration
+        del fi
+        del result
 
         print('Done uploading new VTT file!')
 
