@@ -68,7 +68,7 @@ def transcribe_loop(server, language, secret_api_key, model='small', api_version
         # Step 4) Upload vtt and close the memory StringIO file
         files = {'file': fi}
         upload_url = f'{server}/{api_version}/upload_result/{wid}/{secret_api_key}'
-        print("{upload_url=}")
+        print(f"{upload_url=}")
 
         resp = requests.post(upload_url, files=files)
         data = resp.json()
