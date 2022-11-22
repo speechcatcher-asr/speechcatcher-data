@@ -20,7 +20,7 @@ def cancel_work(server, secret_api_key, wid, api_version='apiv1'):
 
 def transcribe_loop(server, language, secret_api_key, model='small', api_version='apiv1'):
    
-    print('Loading whisper model')
+    print(f'Loading whisper model {model}')
     model = whisper.load_model(model)
     wip = False
     print('Done')
