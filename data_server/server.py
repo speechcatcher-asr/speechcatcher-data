@@ -22,14 +22,10 @@ def get_work(language, api_access_key):
     if api_secret_key != api_access_key:
         return jsonify({'success':False, 'error':'api_access_key invalid'})
 
-    #CREATE TABLE IF NOT EXISTS podcasts (podcast_episode_id serial PRIMARY KEY, podcast_title TEXT, episode_title TEXT, published_date TEXT, retrieval_time DECIMAL, authors TEXT, language|
-#     VARCHAR(16), description TEXT, keywords TEXT, episode_url TEXT, episode_audio_url TEXT, cache_audio_url TEXT, cache_audio_file TEXT, transcript_file TEXT, duration REAL, type VARCHAR|
- #    (64), episode_json JSON);
-
     return_dict = {'success':False, 'error':'SQL query did not execute'}
     # first sample an author (with empty transcripts)
 
-    p_cursor.execute(f'SELECT authors,count(podcast_episode_id) from podcasts '
+    p_cursor.execute(f'SELECT authors,count({sql_table_ids}) from podcasts '
                      'WHERE transcript_file=%s and language=%s GROUP BY authors ORDER BY RANDOM() '
                      'LIMIT 1', ('',language) )
     record = p_cursor.fetchone()
@@ -39,8 +35,8 @@ def get_work(language, api_access_key):
     if record is not None and len(record) > 0:
         authors, count_episodes = record
 
-        p_cursor.execute('SELECT podcast_episode_id, episode_title, authors, language, episode_audio_url, cache_audio_url, '
-                            'cache_audio_file, transcript_file FROM podcasts '
+        p_cursor.execute(f'SELECT {sql_table_ids}, episode_title, authors, language, episode_audio_url, cache_audio_url, '
+                            'cache_audio_file, transcript_file FROM {sql_table} '
                             'WHERE transcript_file=%s and language=%s and authors=%s ORDER BY RANDOM() '
                             'LIMIT 1', ('',language, authors) )
 
@@ -48,8 +44,8 @@ def get_work(language, api_access_key):
 
         if record is not None and len(record) > 0:
             print(record)
-            podcast_episode_id, episode_title, authors, language, episode_audio_url, cache_audio_url, cache_audio_file, transcript_file = record
-            return_dict = {'podcast_episode_id':podcast_episode_id, 'episode_title':episode_title, 'authors':authors,
+            table_id, episode_title, authors, language, episode_audio_url, cache_audio_url, cache_audio_file, transcript_file = record
+            return_dict = {'wid':table_id, 'episode_title':episode_title, 'authors':authors,
                             'language':language, 'episode_audio_url':episode_audio_url, 'cache_audio_url':cache_audio_url,
                             'cache_audio_file':cache_audio_file, 'transcript_file':transcript_file, 'success':True}
         else:
@@ -66,17 +62,17 @@ def register_wip(wid, api_access_key):
     if api_secret_key != api_access_key:
         return jsonify({'success': False, 'error':'api_access_key invalid'})
 
-    p_cursor.execute('SELECT podcast_episode_id, transcript_file FROM podcasts WHERE podcast_episode_id=%s', (str(wid),))
+    p_cursor.execute(f'SELECT {sql_table_ids}, transcript_file FROM {sql_table} WHERE {sql_table_ids}=%s', (str(wid),))
     record = p_cursor.fetchone()
 
-    podcast_episode_id, transcript_file = record
+    table_id, transcript_file = record
 
     if transcript_file == 'in_progress':
         return jsonify({'success': False, 'error': str(wid)+' already in progress'})
     elif transcript_file != '':
         return jsonify({'success': False, 'error': str(wid)+' already transcribed'})
 
-    p_cursor.execute("UPDATE podcasts SET transcript_file = 'in_progress' WHERE podcast_episode_id=%s" , (str(wid),))
+    p_cursor.execute(f"UPDATE {sql_table} SET transcript_file = 'in_progress' WHERE {sql_table_ids}=%s" , (str(wid),))
     p_connection.commit()
 
     return jsonify({'success': True})
@@ -89,10 +85,10 @@ def upload_result(wid, api_access_key):
     if 'file' not in request.files:
         return jsonify({'success': False, 'error':'no file found in POST request'})
 
-    p_cursor.execute('SELECT podcast_episode_id, transcript_file, cache_audio_file, episode_audio_url FROM podcasts WHERE podcast_episode_id=%s', (str(wid),))
+    p_cursor.execute(f'SELECT {sql_table_ids}, transcript_file, cache_audio_file, episode_audio_url FROM {sql_table} WHERE {sql_table_ids}=%s', (str(wid),))
     record = p_cursor.fetchone()
 
-    podcast_episode_id, transcript_file = record
+    table_id, transcript_file = record
 
     if transcript_file != 'in_progress':
         return jsonify({'success': False, 'error': str(wid)+' not in progress'})
@@ -106,7 +102,7 @@ def upload_result(wid, api_access_key):
         full_filename = vtt_dir + '/' + cache_audio_file.split('/')[-1] + '.vtt'
         myfile.save(full_filename)
 
-        p_cursor.execute('UPDATE podcasts SET transcript_file=%s WHERE podcast_episode_id=%s', (full_filename, str(wid)))
+        p_cursor.execute(f'UPDATE {sql_table} SET transcript_file=%s WHERE {sql_table_ids}=%s', (full_filename, str(wid)))
         p_connection.commit()
 
     return jsonify({'success': True})
@@ -116,17 +112,17 @@ def cancel_work(wid, api_access_key):
     if api_secret_key != api_access_key:
         return jsonify({'error':'api_access_key invalid'})
 
-    p_cursor.execute('SELECT podcast_episode_id, transcript_file FROM podcasts WHERE podcast_episode_id=%s', (str(wid),))
+    p_cursor.execute(f'SELECT {sql_table_ids}, transcript_file FROM {sql_table} WHERE {sql_table_ids}=%s', (str(wid),))
     record = p_cursor.fetchone()
 
-    podcast_episode_id, transcript_file = record
+    table_id, transcript_file = record
 
     if transcript_file != 'in_progress':
         if transcript_file != '':
             return jsonify({'success': False, 'error': str(wid)+' already transcribed'})
         return jsonify({'success': False, 'error': str(wid)+' not in progress'})
 
-    p_cursor.execute("UPDATE podcasts SET transcript_file = '' WHERE podcast_episode_id=%s" , (str(wid),))
+    p_cursor.execute(f"UPDATE {sql_table} SET transcript_file = '' WHERE {sql_table_ids}=%s" , (str(wid),))
     p_connection.commit()
 
     return jsonify({'success': True})
