@@ -17,7 +17,7 @@ p_connection, p_cursor = connect_to_db(database=config["database"], user=config[
 #CREATE TABLE IF NOT EXISTS podcasts (podcast_episode_id serial PRIMARY KEY, podcast_title TEXT, episode_title TEXT, published_date TEXT, retrieval_time DECIMAL, authors TEXT, language VARCHAR(16), description TEXT, keywords TEXT, episode_url TEXT, episode_audio_url TEXT, cache_audio_url TEXT, cache_audio_file TEXT, transcript_file TEXT, duration REAL, type VARCHAR(64), episode_json JSON);
 
 # load untranscribed and transcribed sums from database
-sql = "select sum(duration) from " + podcast_table + " where transcript_file <> '';" 
+sql = "select sum(duration) from " + podcast_table + " where transcript_file <> '' and transcript_file <> 'in_progress';" 
 
 p_cursor.execute(sql)
 record = p_cursor.fetchone()[0]
@@ -26,13 +26,21 @@ if record is None:
 else:
     transcribed_hours = float(record) / 3600.
 
-sql = "select sum(duration) from " + podcast_table + " where transcript_file = '';"
+sql = "select sum(duration) from " + podcast_table + " where transcript_file = '' and transcript_file == 'in_progress';"
 
 p_cursor.execute(sql)
 record = p_cursor.fetchone()[0]
 untranscribed_hours = float(record) / 3600.
 
 transcribed_ratio = transcribed_hours / (untranscribed_hours+transcribed_hours)
+
+# in progress
+
+sql = "select sum(duration) from " + podcast_table + " where transcript_file == 'in_progress';"
+
+p_cursor.execute(sql)
+record = p_cursor.fetchone()[0]
+inprogress_hours = float(record) / 3600.
 
 # estimate transcription speed
 try:
@@ -48,7 +56,7 @@ if prev_time!= 0.:
     time_interval_in_hours = time_interval / 3600.
     transcription_speed = (transcribed_hours - prev_transcribed_hours) / time_interval_in_hours
 
-print(f'{transcribed_hours=}', f'{untranscribed_hours=}', f'{transcribed_ratio=}', f'{transcription_speed=}')
+print(f'{transcribed_hours=}', f'{untranscribed_hours=}', '{inprogress_hours=}' , f'{transcribed_ratio=}', f'{transcription_speed=}')
 
 html = f'''<html>
 <head><title>Speechcatcher dataset stats</title></head
@@ -64,7 +72,7 @@ html = f'''<html>
 </svg>
    
 <p>Current transcription speed is: {transcription_speed} hours per hour</p>
-
+<p>Currently in progress: {inprogress_hours} hours </p>
 </body>
 </html>'''
 
