@@ -1,6 +1,6 @@
 import argparse
 import flask
-import request
+#import request
 
 from flask import Flask, jsonify
 from werkzeug.serving import WSGIRequestHandler
@@ -42,7 +42,7 @@ def get_work(language, api_access_key):
 
         # Use the sampled author to sample a random untranscribed episode from that author
         p_cursor.execute(f'SELECT {sql_table_ids}, episode_title, authors, language, episode_audio_url, cache_audio_url, '
-                            'cache_audio_file, transcript_file FROM {sql_table} '
+                            f'cache_audio_file, transcript_file FROM {sql_table} '
                             'WHERE transcript_file=%s and language=%s and authors=%s ORDER BY RANDOM() '
                             'LIMIT 1', ('',language, authors) )
 
