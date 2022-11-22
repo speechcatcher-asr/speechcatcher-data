@@ -95,7 +95,7 @@ def upload_result(wid, api_access_key):
     p_cursor.execute(f'SELECT {sql_table_ids}, transcript_file, cache_audio_file, episode_audio_url FROM {sql_table} WHERE {sql_table_ids}=%s', (str(wid),))
     record = p_cursor.fetchone()
 
-    table_id, transcript_file = record
+    table_id, transcript_file, cache_audio_file, episode_audio_url = record
 
     if transcript_file != 'in_progress':
         return jsonify({'success': False, 'error': str(wid)+' not in progress'})
