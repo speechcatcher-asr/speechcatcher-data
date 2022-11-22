@@ -1,8 +1,7 @@
 import argparse
 import flask
-#import request
 
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
 from werkzeug.serving import WSGIRequestHandler
 
 from utils import load_config, connect_to_db  
