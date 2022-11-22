@@ -1,5 +1,7 @@
 import argparse
 import flask
+import request
+
 from flask import Flask, jsonify
 from werkzeug.serving import WSGIRequestHandler
 
@@ -10,21 +12,24 @@ p_connection, p_cursor = None, None
 app = Flask(__name__)
 api_version = '/apiv1'
 api_secret_key = ''
+vtt_dir = ''
+sql_table = 'podcasts'
+sql_table_ids = 'podcast_episode_id'
 
 @app.route(api_version + '/get_work/<language>/<api_access_key>', methods=['GET'])
 def get_work(language, api_access_key):
    
     if api_secret_key != api_access_key:
-        return jsonify({'error':'api_access_key invalid'})
+        return jsonify({'success':False, 'error':'api_access_key invalid'})
 
     #CREATE TABLE IF NOT EXISTS podcasts (podcast_episode_id serial PRIMARY KEY, podcast_title TEXT, episode_title TEXT, published_date TEXT, retrieval_time DECIMAL, authors TEXT, language|
 #     VARCHAR(16), description TEXT, keywords TEXT, episode_url TEXT, episode_audio_url TEXT, cache_audio_url TEXT, cache_audio_file TEXT, transcript_file TEXT, duration REAL, type VARCHAR|
  #    (64), episode_json JSON);
 
-    return_dict = {'error':'SQL query did not execute'}
+    return_dict = {'success':False, 'error':'SQL query did not execute'}
     # first sample an author (with empty transcripts)
 
-    p_cursor.execute('SELECT authors,count(podcast_episode_id) from podcasts '
+    p_cursor.execute(f'SELECT authors,count(podcast_episode_id) from podcasts '
                      'WHERE transcript_file=%s and language=%s GROUP BY authors ORDER BY RANDOM() '
                      'LIMIT 1', ('',language) )
     record = p_cursor.fetchone()
@@ -44,14 +49,14 @@ def get_work(language, api_access_key):
         if record is not None and len(record) > 0:
             print(record)
             podcast_episode_id, episode_title, authors, language, episode_audio_url, cache_audio_url, cache_audio_file, transcript_file = record
-            return_dict = {"podcast_episode_id":podcast_episode_id, "episode_title":episode_title, "authors":authors,
-                            "language":language, "episode_audio_url":episode_audio_url, "cache_audio_url":cache_audio_url,
-                            "cache_audio_file":cache_audio_file, "transcript_file":transcript_file}
+            return_dict = {'podcast_episode_id':podcast_episode_id, 'episode_title':episode_title, 'authors':authors,
+                            'language':language, 'episode_audio_url':episode_audio_url, 'cache_audio_url':cache_audio_url,
+                            'cache_audio_file':cache_audio_file, 'transcript_file':transcript_file, 'success':True}
         else:
-            return_dict = {'error':'No episodes without transcription for author: '+authors}
+            return_dict = {'success':False, 'error':'No episodes without transcription for author: '+authors}
 
     else:
-        return_dict = {'error':'No episodes left without transcriptions.'}
+        return_dict = {'success':False, 'error':'No episodes left without transcriptions.'}
 
     return jsonify(return_dict)
 
@@ -59,7 +64,7 @@ def get_work(language, api_access_key):
 def register_wip(wid, api_access_key):
 
     if api_secret_key != api_access_key:
-        return jsonify({'error':'api_access_key invalid'})
+        return jsonify({'success': False, 'error':'api_access_key invalid'})
 
     p_cursor.execute('SELECT podcast_episode_id, transcript_file FROM podcasts WHERE podcast_episode_id=%s', (str(wid),))
     record = p_cursor.fetchone()
@@ -78,7 +83,33 @@ def register_wip(wid, api_access_key):
 
 @app.route(api_version + '/upload_result/<wid>/<api_access_key>', methods=['POST'])
 def upload_result(wid, api_access_key):
-    return
+    if api_secret_key != api_access_key:
+        return jsonify({'success': False, 'error':'api_access_key invalid'})
+
+    if 'file' not in request.files:
+        return jsonify({'success': False, 'error':'no file found in POST request'})
+
+    p_cursor.execute('SELECT podcast_episode_id, transcript_file, cache_audio_file, episode_audio_url FROM podcasts WHERE podcast_episode_id=%s', (str(wid),))
+    record = p_cursor.fetchone()
+
+    podcast_episode_id, transcript_file = record
+
+    if transcript_file != 'in_progress':
+        return jsonify({'success': False, 'error': str(wid)+' not in progress'})
+
+    if cache_audio_file == '':
+        return jsonify({'success': False, 'error': str(wid)+' does not have a cache file, this is currently unsupported'})
+
+    myfile = request.files['file']
+
+    if myfile:
+        full_filename = vtt_dir + '/' + cache_audio_file.split('/')[-1] + '.vtt'
+        myfile.save(full_filename)
+
+        p_cursor.execute('UPDATE podcasts SET transcript_file=%s WHERE podcast_episode_id=%s', (full_filename, str(wid)))
+        p_connection.commit()
+
+    return jsonify({'success': True})
 
 @app.route(api_version + '/cancel_work/<wid>/<api_access_key>', methods=['GET'])
 def cancel_work(wid, api_access_key):
@@ -111,6 +142,7 @@ if __name__ == '__main__':
 
     config = load_config()
     api_secret_key = config["secret_api_key"]
+    vtt_dir = config["vtt_dir"]
 
     p_connection, p_cursor = connect_to_db(database=config["database"], user=config["user"], password=config["password"], host=config["host"], port=config["port"])
 
