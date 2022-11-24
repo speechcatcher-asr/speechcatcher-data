@@ -57,7 +57,11 @@ def transcribe_loop(server, language, secret_api_key, model='small', api_version
 
             # Step 3) Use whisper to transcribe and obtain a vtt
             print("Transcribing with whisper...")
-            result = model.transcribe(url, language=language)
+            #result = model.transcribe(url, language=language)
+
+            # there might be a bug in whisper where the default of the the command line process doesn't match the defaults of the transcribe function, the parameters below replicate the command line defaults
+            result = model.transcribe(url, language=language, task='transcribe', temperature=(0.0, 0.2, 0.4, 0.6, 0.8, 1.0), best_of=5, beam_size=5, suppress_tokens="-1", condition_on_previous_text=True, fp16=True, compression_ratio_threshold=2.4, logprob_threshold=-1., no_speech_threshold=0.6)
+            
             print('Done!')
 
             print('model reported language:', result["language"])
