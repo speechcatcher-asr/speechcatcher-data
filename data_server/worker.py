@@ -60,6 +60,9 @@ def transcribe_loop(server, language, secret_api_key, model='small', api_version
             result = model.transcribe(url, language=language)
             print('Done!')
 
+            print('model reported language:', result["language"])
+            assert(result["language"] == language)
+
             fi = io.StringIO('')
             write_vtt(result["segments"], file=fi)
 
