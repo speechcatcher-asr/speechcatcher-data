@@ -26,7 +26,7 @@ if record is None:
 else:
     transcribed_hours = float(record) / 3600.
 
-sql = "select sum(duration) from " + podcast_table + " where transcript_file = '' and transcript_file == 'in_progress';"
+sql = "select sum(duration) from " + podcast_table + " where transcript_file = '' or transcript_file = 'in_progress';"
 
 p_cursor.execute(sql)
 record = p_cursor.fetchone()[0]
@@ -36,11 +36,15 @@ transcribed_ratio = transcribed_hours / (untranscribed_hours+transcribed_hours)
 
 # in progress
 
-sql = "select sum(duration) from " + podcast_table + " where transcript_file == 'in_progress';"
+sql = "select sum(duration) from " + podcast_table + " where transcript_file = 'in_progress';"
 
 p_cursor.execute(sql)
 record = p_cursor.fetchone()[0]
-inprogress_hours = float(record) / 3600.
+
+if record is None:
+    inprogress_hours = 0.
+else:
+    inprogress_hours = float(record) / 3600.
 
 # estimate transcription speed
 try:
@@ -56,7 +60,7 @@ if prev_time!= 0.:
     time_interval_in_hours = time_interval / 3600.
     transcription_speed = (transcribed_hours - prev_transcribed_hours) / time_interval_in_hours
 
-print(f'{transcribed_hours=}', f'{untranscribed_hours=}', '{inprogress_hours=}' , f'{transcribed_ratio=}', f'{transcription_speed=}')
+print(f'{transcribed_hours=}', f'{untranscribed_hours=}', f'{inprogress_hours=}' , f'{transcribed_ratio=}', f'{transcription_speed=}')
 
 html = f'''<html>
 <head><title>Speechcatcher dataset stats</title></head
