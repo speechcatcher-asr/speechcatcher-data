@@ -20,85 +20,92 @@ def cancel_work(server, secret_api_key, wid, api_version='apiv1'):
 
 def transcribe_loop(server, language, secret_api_key, model='small', api_version='apiv1'):
    
-    print('Loading whisper model')
+    print(f'Loading whisper model {model}')
     model = whisper.load_model(model)
     wip = False
     print('Done')
 
     get_work_url = f'{server}/{api_version}/get_work/{language}/{secret_api_key}'
     print(f'{get_work_url=}')
+    while True:
+        try:
+            # Step 1) Get a url to transcribe from the transcription server
 
-    try:
-        # Step 1) Get a url to transcribe from the transcription server
+            resp = requests.get(url=get_work_url)
+            data = resp.json()
 
-        resp = requests.get(url=get_work_url)
-        data = resp.json()
+            assert(data['transcript_file'] == '')
+            assert(data['cache_audio_url'] != '')
+            assert(data['success'] == True)
 
-        assert(data['transcript_file'] == '')
-        assert(data['cache_audio_url'] != '')
-        assert(data['success'] == True)
+            url = data['cache_audio_url']
+            wid = data['wid']
 
-        url = data['cache_audio_url']
-        wid = data['wid']
+            print('New job:', data)
+            print('Work ID:', wid)
 
-        print('New job:', data)
-        print('Work ID:', wid)
+            # Step 2) Confirm we are taking the job
+            confirm_work_url = f'{server}/{api_version}/register_wip/{wid}/{secret_api_key}'
+            
+            print(f'{confirm_work_url=}')
 
-        # Step 2) Confirm we are taking the job
-        confirm_work_url = f'{server}/{api_version}/register_wip/{wid}/{secret_api_key}'
-        
-        print(f'{confirm_work_url=}')
+            resp = requests.get(url=confirm_work_url)
+            data = resp.json()
+            print('Confirmed:', data)
+            assert(data['success'] == True)
+            wip = True
 
-        resp = requests.get(url=confirm_work_url)
-        data = resp.json()
-        print('Confirmed:', data)
-        assert(data['success'] == True)
-        wip = True
+            # Step 3) Use whisper to transcribe and obtain a vtt
+            print("Transcribing with whisper...")
+            #result = model.transcribe(url, language=language)
 
-        # Step 3) Use whisper to transcribe and obtain a vtt
-        print("Transcribing with whisper...")
-        result = model.transcribe(url, language=language)
-        print('Done!')
+            # there might be a bug in whisper where the default of the the command line process doesn't match the defaults of the transcribe function, the parameters below replicate the command line defaults
+            result = model.transcribe(url, language=language, task='transcribe', temperature=(0.0, 0.2, 0.4, 0.6, 0.8, 1.0), best_of=5, beam_size=5, suppress_tokens="-1", condition_on_previous_text=True, fp16=True, compression_ratio_threshold=2.4, logprob_threshold=-1., no_speech_threshold=0.6)
+            
+            print('Done!')
 
-        fi = io.StringIO('')
-        write_vtt(result["segments"], file=fi)
+            print('model reported language:', result["language"])
+            assert(result["language"] == language)
 
-        fi.seek(0)
+            fi = io.StringIO('')
+            write_vtt(result["segments"], file=fi)
 
-        # Step 4) Upload vtt and close the memory StringIO file
-        files = {'file': fi}
-        upload_url = f'{server}/{api_version}/upload_result/{wid}/{secret_api_key}'
-        print("{upload_url=}")
+            fi.seek(0)
 
-        resp = requests.post(upload_url, files=files)
-        data = resp.json()
-        assert(data['success'] == True)
-        wip = False
-        vtt_str = fi.read()
-        fi.close()
-        
-        # Cleanup, just making sure data doesnt get mixed up in the next iteration
-        del fi
-        del result
+            # Step 4) Upload vtt and close the memory StringIO file
+            files = {'file': fi}
+            upload_url = f'{server}/{api_version}/upload_result/{wid}/{secret_api_key}'
+            print(f"{upload_url=}")
 
-        print('Done uploading new VTT file!')
+            resp = requests.post(upload_url, files=files)
+            data = resp.json()
+            assert(data['success'] == True)
+            wip = False
+            vtt_str = fi.read()
+            fi.close()
+            
+            # Cleanup, just making sure data doesnt get mixed up in the next iteration
+            del fi
+            del result
 
-    except KeyboardInterrupt:
-        print("Keyboard interrupt")
-        if wip:
-            print('Canceled with work in progress:', wid)
-            cancel_work(server, secret_api_key, wid, api_version)
+            print('Done uploading new VTT file!')
 
-        sys.exit(-10)
+        except KeyboardInterrupt:
+            print("Keyboard interrupt")
+            if wip:
+                print('Canceled with work in progress:', wid)
+                cancel_work(server, secret_api_key, wid, api_version)
 
-    except Exception as e:
-        print("Exception encountered in transcribe_loop:", e)
-        traceback.print_exc()
-        if wip:
-            print('Canceled with work in progress:', wid)
-            cancel_work(server, secret_api_key, wid, api_version)
+            sys.exit(-10)
 
-        time.sleep(30)
+        except Exception as e:
+            print("Exception encountered in transcribe_loop:", e)
+            traceback.print_exc()
+            if wip:
+                print('Canceled with work in progress:', wid)
+                cancel_work(server, secret_api_key, wid, api_version)
+
+            time.sleep(30)
 
     return
 
