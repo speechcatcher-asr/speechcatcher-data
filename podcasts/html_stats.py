@@ -68,15 +68,15 @@ html = f'''<html>
 
 <h1>Speechcatcher dataset stats</h1>
 
-<p>Transcribed {transcribed_hours} hours from {untranscribed_hours+transcribed_hours} hours in total.</p>
+<p>Transcribed {round(transcribed_hours, 2)} hours from {round(untranscribed_hours+transcribed_hours, 2)} hours in total ({round(transcribed_ratio*100.0,2)}%).</p>
 
 <svg width="450" height="20">
   <rect width="400" height="15" style="fill:grey" />
   <rect width="{int(transcribed_ratio * 400)}" height="15" style="fill:green" />
 </svg>
    
-<p>Current transcription speed is: {transcription_speed} hours per hour</p>
-<p>Currently in progress: {inprogress_hours} hours </p>
+<p>Current transcription speed is: {round(transcription_speed, 2)} hours per hour</p>
+<p>Currently in progress: {round(inprogress_hours, 2)} hours </p>
 </body>
 </html>'''
 
