@@ -4,7 +4,7 @@ import flask
 from flask import Flask, jsonify, request
 from werkzeug.serving import WSGIRequestHandler
 
-from utils import load_config, connect_to_db  
+from utils import load_config, connect_to_db, ensure_dir  
 
 p_connection, p_cursor = None, None
 
@@ -112,7 +112,9 @@ def upload_result(wid, api_access_key):
 
         cache_audio_file_split = cache_audio_file.split('/')
         source_dir = '/'.join(cache_audio_file_split[:-1])
-        full_filename = vtt_dir.replace('{source_dir}', source_dir) + '/' + cache_audio_file_split[-1] + '.vtt'
+        full_dir = vtt_dir.replace('{source_dir}', source_dir) + '/'
+        ensure_dir(full_dir)
+        full_filename = full_dir + cache_audio_file_split[-1] + '.vtt'
         print('Saving vtt file to:', full_filename)
         myfile.save(full_filename)
 
