@@ -1,6 +1,12 @@
 import yaml
 import psycopg2
 import traceback
+import os
+
+def ensure_dir(f):
+    d = os.path.dirname(f)
+    if not os.path.exists(d):
+        os.makedirs(d)
 
 def load_config(config_filename='../config.yaml'):
     with open(config_filename, "r") as stream:
