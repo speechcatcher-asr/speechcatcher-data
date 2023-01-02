@@ -1,5 +1,6 @@
 import argparse
 import flask
+import traceback
 
 from flask import Flask, jsonify, request
 from werkzeug.serving import WSGIRequestHandler
@@ -23,12 +24,16 @@ def get_podcast_list(language, api_access_key):
     if api_secret_key != api_access_key:
         return jsonify({'success':False, 'error':'api_access_key invalid'})
     
-    return_dict = {'success':False, 'error':'SQL query did not execute'}
 
-    p_cursor.execute(f'SELECT distinct(podcast_title), count() from podcasts '
-                     'WHERE language=%s', (language,) )
+    try:
+        p_cursor.execute(f'SELECT distinct(podcast_title), count(podcast_episode_id) from podcasts '
+                     'WHERE language=%s GROUP BY podcast_title', (language,) )
 
-    records = p_cursor.fetchall()
+        records = p_cursor.fetchall()
+    except:
+        traceback.print_exc()
+        return_dict = {'success':False, 'error':'SQL query did not execute'}
+        return jsonify(return_dict)
 
     podcast_titles = [{'title':record[0], 'count':record[1]} for record in records] 
 
@@ -42,12 +47,17 @@ def get_episode_list(api_access_key):
 
     podcast_title = request.values.get('podcast_title')
 
-    p_cursor.execute(f'SELECT podcast_episode_id, podcast_title, episode_title, published_date, retrieval_time,'
-        'authors, language, description, keywords, episode_url, episode_audio_url,'
-        'cache_audio_url, cache_audio_file, transcript_file, duration from podcasts'
-        'WHERE podcast_title=%s and transcript_file<>%s', (podcast_title, '') )
+    try:
+        p_cursor.execute(f'SELECT podcast_episode_id, podcast_title, episode_title, published_date, retrieval_time,'
+            'authors, language, description, keywords, episode_url, episode_audio_url,'
+            'cache_audio_url, cache_audio_file, transcript_file, duration from podcasts'
+            'WHERE podcast_title=%s and transcript_file<>%s', (podcast_title, '') )
 
-    records = p_cursor.fetchall()
+        records = p_cursor.fetchall()
+    except:
+        traceback.print_exc()
+        return_dict = {'success':False, 'error':'SQL query did not execute'}
+        return jsonify(return_dict)
 
     return jsonify(records)
 
@@ -60,12 +70,17 @@ def get_every_episode_list(api_access_key):
 
     podcast_title = request.values.get('podcast_title')
 
-    p_cursor.execute(f'SELECT podcast_episode_id, podcast_title, episode_title, published_date, retrieval_time,'
-        'authors, language, description, keywords, episode_url, episode_audio_url,'
-        'cache_audio_url, cache_audio_file, transcript_file, duration from podcasts'
-        'WHERE transcript_file<>%s', (podcast_title, '') )
+    try:
+        p_cursor.execute(f'SELECT podcast_episode_id, podcast_title, episode_title, published_date, retrieval_time,'
+            'authors, language, description, keywords, episode_url, episode_audio_url,'
+            'cache_audio_url, cache_audio_file, transcript_file, duration from podcasts'
+            'WHERE transcript_file<>%s', (podcast_title, '') )
+        records = p_cursor.fetchall()
 
-    records = p_cursor.fetchall()
+    except:
+        traceback.print_exc()
+        return_dict = {'success':False, 'error':'SQL query did not execute'}
+        return jsonify(return_dict)
 
     return jsonify(records)
 
