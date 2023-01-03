@@ -47,10 +47,12 @@ def get_episode_list(api_access_key):
 
     podcast_title = request.values.get('podcast_title')
 
+    assert(podcast_title is not None)
+
     try:
         p_cursor.execute(f'SELECT podcast_episode_id, podcast_title, episode_title, published_date, retrieval_time,'
             'authors, language, description, keywords, episode_url, episode_audio_url,'
-            'cache_audio_url, cache_audio_file, transcript_file, duration from podcasts'
+            'cache_audio_url, cache_audio_file, transcript_file, duration from podcasts '
             'WHERE podcast_title=%s and transcript_file<>%s', (podcast_title, '') )
 
         records = p_cursor.fetchall()
@@ -68,13 +70,11 @@ def get_every_episode_list(api_access_key):
     if api_secret_key != api_access_key:
         return jsonify({'success':False, 'error':'api_access_key invalid'})
 
-    podcast_title = request.values.get('podcast_title')
-
     try:
         p_cursor.execute(f'SELECT podcast_episode_id, podcast_title, episode_title, published_date, retrieval_time,'
             'authors, language, description, keywords, episode_url, episode_audio_url,'
-            'cache_audio_url, cache_audio_file, transcript_file, duration from podcasts'
-            'WHERE transcript_file<>%s', (podcast_title, '') )
+            'cache_audio_url, cache_audio_file, transcript_file, duration from podcasts '
+            'WHERE transcript_file<>%s', ('',) )
         records = p_cursor.fetchall()
 
     except:
