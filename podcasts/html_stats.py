@@ -4,6 +4,7 @@ import time
 import os
 import traceback
 import pickle
+from datetime import datetime
 
 from utils import load_config, connect_to_db
 
@@ -62,6 +63,12 @@ if prev_time!= 0.:
 
 print(f'{transcribed_hours=}', f'{untranscribed_hours=}', f'{inprogress_hours=}' , f'{transcribed_ratio=}', f'{transcription_speed=}')
 
+current_datetime = datetime.now()
+
+formatted_current_datetime = current_datetime.strftime("%m/%d/%Y, %H:%M:%S")
+
+print(f'{formatted_current_datetime=}')
+
 html = f'''<html>
 <head><title>Speechcatcher dataset stats</title></head
 <body>
@@ -77,6 +84,7 @@ html = f'''<html>
    
 <p>Current transcription speed is: {round(transcription_speed, 2)} hours per hour</p>
 <p>Currently in progress: {round(inprogress_hours, 2)} hours </p>
+<p>Info queried at: {formatted_current_datetime}</p>
 </body>
 </html>'''
 

@@ -9,7 +9,7 @@ def get_duration(input_video):
     cmd = ["ffprobe", "-i", input_video, "-show_entries", "format=duration", "-v", "quiet", "-sexagesimal", "-of", "csv=p=0"]
     return subprocess.check_output(cmd).decode("utf-8").strip()
 
-def check_for_degenerate_vtts(vtt_dir, audio_dir=''):
+def check_for_degenerate_vtts(vtt_dir, audio_dir='', possibly_corrupted_outfile='possibly_corrupted.txt', timestamps_tsv='timestamps.tsv'):
     vtts = glob.glob(f'{vtt_dir}/*.vtt')
 
     ignore = ['-->','WEBVTT']
@@ -17,6 +17,8 @@ def check_for_degenerate_vtts(vtt_dir, audio_dir=''):
     vocab = {}
 
     tokenizer = SoMaJo(language="de_CMC")
+
+    degen_vtts = []
 
     for vtt in tqdm(vtts):
         lines = {}
@@ -37,7 +39,8 @@ def check_for_degenerate_vtts(vtt_dir, audio_dir=''):
                 vtt_filename = vtt.split('/')[-1]
                 input_audio = audio_dir + '/' + vtt_filename[:-4]
                 ffprobe_timestamp = get_duration(input_audio)
-                print(f"{vtt}", f"{last_timestamp=}", f"{ffprobe_timestamp=}")
+                print(f'{vtt}', f'{last_timestamp=}', f'{ffprobe_timestamp=}')
+                timestamps_tsv.write(f'{vtt}\t{last_timestamp}\t{ffprobe_timestamp}\n')
                 # TODO: check for overflows
 
             sentences = tokenizer.tokenize_text(paras, parallel=8)
@@ -46,9 +49,22 @@ def check_for_degenerate_vtts(vtt_dir, audio_dir=''):
                     if token not in vocab:
                         vocab[token.text] = True
         if len(lines) < 5:
-            print('vtt:',vtt,'len distinct lines very small:', len(list(lines.keys())))
+            degen_num_lines = len(list(lines.keys()))
+            #print('vtt:',vtt,'len distinct lines very small:', degen_num_lines)
+            degen_vtts.append([vtt, degen_num_lines])
     
     print(f"Vocabulary: {len(vocab)} words.")
+
+    with open(possibly_corrupted_outfile, 'w'):
+        for vtt, degen_num_lines in degen_vtts:
+            print('vtt:',vtt,'len distinct lines very small:', degen_num_lines)
+            possibly_corrupted_outfile.write(vtt + '\n')
+
+    all_vtts_len = float(len(vtts))
+    degen_vtts_len = float(len(degen_vtts))
+
+    degen_percent = (degen_vtts_len / all_vtts_len) * 100.
+    print(f'Possibly corrupted files: about {round(degen_percent,3)}%')
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Check vtts for unusual repetitions and vocabulary.')
