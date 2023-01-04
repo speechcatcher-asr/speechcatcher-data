@@ -18,6 +18,14 @@ vtt_dir = ''
 sql_table = 'podcasts'
 sql_table_ids = 'podcast_episode_id'
 
+transcript_file_replace_prefix = '/var/www/'
+
+podcast_columns = 'podcast_episode_id, podcast_title, episode_title, published_date, retrieval_time, ' \
+            'authors, language, description, keywords, episode_url, episode_audio_url, ' \
+                        'cache_audio_url, cache_audio_file, transcript_file, duration'
+podcast_columns_list = podcast_columns.split(', ')
+
+
 # Returns all podcast titles
 @app.route(api_version + '/get_podcast_list/<language>/<api_access_key>', methods=['GET'])
 def get_podcast_list(language, api_access_key):
@@ -50,9 +58,7 @@ def get_episode_list(api_access_key):
     assert(podcast_title is not None)
 
     try:
-        p_cursor.execute(f'SELECT podcast_episode_id, podcast_title, episode_title, published_date, retrieval_time,'
-            'authors, language, description, keywords, episode_url, episode_audio_url,'
-            'cache_audio_url, cache_audio_file, transcript_file, duration from podcasts '
+        p_cursor.execute(f'SELECT {podcast_columns} from podcasts '
             'WHERE podcast_title=%s and transcript_file<>%s', (podcast_title, '') )
 
         records = p_cursor.fetchall()
@@ -61,7 +67,13 @@ def get_episode_list(api_access_key):
         return_dict = {'success':False, 'error':'SQL query did not execute'}
         return jsonify(return_dict)
 
-    return jsonify(records)
+    return_list = []
+    for record in records:
+        record_dict = dict(zip(podcast_columns_list,record))
+        return_list.append(record_dict)
+        record_dict['transcript_file_url'] = record_dict['transcript_file'].replace(transcript_file_replace_prefix, 'https://')
+
+    return jsonify(return_list)
 
 # Get list of all podcast episodes with available vtt files
 # Note: can probably be refactored with the above function
@@ -71,9 +83,7 @@ def get_every_episode_list(api_access_key):
         return jsonify({'success':False, 'error':'api_access_key invalid'})
 
     try:
-        p_cursor.execute(f'SELECT podcast_episode_id, podcast_title, episode_title, published_date, retrieval_time,'
-            'authors, language, description, keywords, episode_url, episode_audio_url,'
-            'cache_audio_url, cache_audio_file, transcript_file, duration from podcasts '
+        p_cursor.execute(f'SELECT {podcast_columns} from podcasts '
             'WHERE transcript_file<>%s', ('',) )
         records = p_cursor.fetchall()
 
@@ -82,7 +92,13 @@ def get_every_episode_list(api_access_key):
         return_dict = {'success':False, 'error':'SQL query did not execute'}
         return jsonify(return_dict)
 
-    return jsonify(records)
+    return_list = []
+    for record in records:
+        record_dict = dict(zip(podcast_columns_list,record))
+        return_list.append(record_dict)
+        record_dict['transcript_file_url'] = record_dict['transcript_file'].replace(transcript_file_replace_prefix, 'https://')
+
+    return jsonify(return_list)
 
 # Samples a new untranscribed episode from the db and sends the result as JSON
 # to have more diversity early on, we first sample an author and then a random episode from that author
