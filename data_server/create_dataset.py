@@ -5,6 +5,35 @@ import random
 import argparse
 from utils import *
 
+def join_consecutive_segments_randomly(segments, max_length=10):
+    
+    segments_copy = segments.copy()
+    joined_segments = []
+
+    i = 0
+    max_i = len(segments_copy)
+    while i < len(segments_copy):
+        num_segments_to_merge = random.randint(2, max_length)
+
+        if i+num_segments_to_merge > max_i:
+          num_segments_to_merge = max_i - i
+
+        if num_segments_to_merge == 0:
+            break
+
+        # Merge the chosen number of segments
+        segment_text = ' '.join([segment['text'] for segment in segments_copy[i:i+num_segments_to_merge]])
+        
+        joined_segments.append({
+            'start': segments_copy[i]['start'],
+            'end': segments_copy[i+num_segments_to_merge-1]['end'],
+            'text': segment_text
+        })
+
+        i += num_segments_to_merge
+
+    return joined_segments
+
 # Download the VTT file
 def download_vtt_file(vtt_file_url):
     response = requests.get(vtt_file_url)
@@ -55,9 +84,12 @@ def process_podcast(server_api_url, api_secret_key,title):
     print(episode_list)
 
     for episode in episode_list:
-        print('parsing:', episode['title'])
+        print('parsing:', episode['episode_title'])
         vtt_content = download_vtt_file(episode['transcript_file_url'])
         segments = parse_vtt_segments(vtt_content) 
+        segments_merged = join_consecutive_segments_randomly(segments)
+        for segment in segments_merged:
+            print(segment)
 
 def process(server_api_url, api_secret_key, dev_n=10, test_n=10, test_dev_episodes_threshold=10):
     
