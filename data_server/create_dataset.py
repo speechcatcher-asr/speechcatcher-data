@@ -1,10 +1,14 @@
-# create a dataset (Kaldi format) with the server.py API
+# Create a dataset (Kaldi format) with the server.py API for podcasts.
+# The dataset is divided into train/dev/test.
+# Timestamps from the vtt files are used for the segments.
 
 import requests
 import random
 import argparse
 from utils import *
 
+# This joins consecutive segments at random, up to a specified max length.
+# The output segment list is shortened and the segments are longer. 
 def join_consecutive_segments_randomly(segments, max_length=10):
     
     segments_copy = segments.copy()
@@ -41,7 +45,7 @@ def download_vtt_file(vtt_file_url):
 
     return vtt_content
 
-# Parse a VTT file
+# Parse a VTT file and extract timestamps and text
 def parse_vtt_segments(vtt_content):
     lines = vtt_content.split('\n')
     segments = []
@@ -70,7 +74,8 @@ def parse_vtt_segments(vtt_content):
 
     return segments
 
-def process_podcast(server_api_url, api_secret_key,title):
+# Process all episodes of a particular podcast
+def process_podcast(server_api_url, api_secret_key, title):
 
     request_url = f"{server_api_url}/get_episode_list/{api_secret_key}"
     data = {'podcast_title': title}
@@ -91,6 +96,7 @@ def process_podcast(server_api_url, api_secret_key,title):
         for segment in segments_merged:
             print(segment)
 
+# Divide dataset into train/dev/test and start processing the podcasts
 def process(server_api_url, api_secret_key, dev_n=10, test_n=10, test_dev_episodes_threshold=10):
     
     request_url = f"{server_api_url}/get_podcast_list/de/{api_secret_key}"
@@ -129,5 +135,6 @@ if __name__ == '__main__':
     random.seed(42)
     config = load_config()
     api_secret_key = config["secret_api_key"]
+    # FIXME: move to yaml
     server_api_url = 'https://speechcatcher.net/apiv1/'
     process(server_api_url, api_secret_key, args.dev_n, args.test_n)
