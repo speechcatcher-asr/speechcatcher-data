@@ -5,7 +5,39 @@
 import requests
 import random
 import argparse
+import hashlib
 from utils import *
+
+# Write out a dataset of episodes to <dataset_dir>
+# podcasts is a list of podcasts, where a podcast has the following structure:
+# podcast = {'title': str, 'episodes': list of episodes}
+#                           |
+#                           episode = {'transcript_file': str, 'segments': list of segments, 'authors': str}
+#                                                               |
+#                                                               segment = {'text': str, 'start': str, 'end': str}
+# The start and end time stamps should already be converted to Kaldi format, i.e. decimals in seconds (as a string) 
+#
+# We derive a sha1 hash from the filename as episode id. 
+
+# TODO: add utt2spk
+def write_kaldi_dataset(podcasts, dataset_dir):
+    ensure_dir(dataset_dir)
+    with open(f'{dataset_dir}/text', 'w') as text_file, \
+         open(f'{dataset_dir}/segments', 'w') as segments_file, \
+         open(f'{dataset_dir}/wav.scp', 'w') as wav_scp_file:
+      for podcast in podcasts:
+          for episode in podcast['episodes']:
+              filename = episode['transcript_file']
+              episode_id = hashlib.sha1(filename.encode()).hexdigest()
+              wav_scp_file.write(f'{episode_id} {filename}\n')
+              for i, segment in enumerate(episode['segments']):
+                  start = segment['start']
+                  end = segment['end']
+                  text = segment['text']
+                  # format of the segments file is: <utterance-id> <recording-id> <segment-begin> <segment-end> 
+                  segments_file.write(f'{episode_id}_{"%.7d" % i} {episode_id} {start} {end}\n')
+                  # format of the text file is: <utterance-id> <text> 
+                  text_file.write(f'{episode_id}_{"%.7d" % i} {text}\n')
 
 # This joins consecutive segments at random, up to a specified max length.
 # The output segment list is shortened and the segments are longer. 
@@ -88,13 +120,21 @@ def process_podcast(server_api_url, api_secret_key, title):
 
     print(episode_list)
 
+    episodes = []
+
     for episode in episode_list:
         print('parsing:', episode['episode_title'])
         vtt_content = download_vtt_file(episode['transcript_file_url'])
+
         segments = parse_vtt_segments(vtt_content) 
         segments_merged = join_consecutive_segments_randomly(segments)
-        for segment in segments_merged:
-            print(segment)
+        
+        episode_copy = episode.copy()
+        episode_copy['segments'] = segments_merged
+
+        episodes.append(episode_copy)
+
+    return {'title': title, 'episodes': episodes}
 
 # Divide dataset into train/dev/test and start processing the podcasts
 def process(server_api_url, api_secret_key, dev_n=10, test_n=10, test_dev_episodes_threshold=10):
@@ -117,8 +157,11 @@ def process(server_api_url, api_secret_key, dev_n=10, test_n=10, test_dev_episod
     print(dev_set)
     print(test_set)
 
+    dev_podcasts = []
     for elem in dev_set:
-        process_podcast(server_api_url, api_secret_key, elem['title'])
+        dev_podcasts += [process_podcast(server_api_url, api_secret_key, elem['title'])]
+
+    write_kaldi_dataset(dev_podcasts, 'data/dev/')    
 
     for elem in test_set:
         process_podcast(server_api_url, api_secret_key, elem['title'])
