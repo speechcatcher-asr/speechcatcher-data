@@ -258,10 +258,6 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    server_api_url: "https://speechcatcher.net/apiv1/"
-    audio_dataset_location: "/srv/enc/speechcatcher.net"
-    replace_audio_dataset_location: "/var/www/speechcatcher.net"
-
     random.seed(42)
     config = load_config()
     api_secret_key = config["secret_api_key"]
