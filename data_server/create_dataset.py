@@ -45,7 +45,7 @@ def write_kaldi_dataset(podcasts, dataset_dir):
          open(f'{dataset_dir}/segments', 'w') as segments_file, \
          open(f'{dataset_dir}/utt2spk', 'w') as utt2spk_file, \
          open(f'{dataset_dir}/wav.scp', 'w') as wav_scp_file, \
-         open(f'{dataset_dir}/id2podcast.tsv', 'w') as id2podcast_file \
+         open(f'{dataset_dir}/id2podcast.tsv', 'w') as id2podcast_file, \
          open(f'{dataset_dir}/utt2dur', 'w') as utt2dur_file:
       for podcast in podcasts:
           for episode in podcast['episodes']:
