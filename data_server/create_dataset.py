@@ -34,14 +34,15 @@ def write_kaldi_dataset(podcasts, dataset_dir):
                   start = segment['start']
                   end = segment['end']
                   text = segment['text']
+                  utterance_id = f'{episode_id}_{"%.7d" % i}'
                   # format of the segments file is: <utterance-id> <recording-id> <segment-begin> <segment-end> 
-                  segments_file.write(f'{episode_id}_{"%.7d" % i} {episode_id} {start} {end}\n')
+                  segments_file.write(f'{utterance_id} {episode_id} {start} {end}\n')
                   # format of the text file is: <utterance-id> <text> 
-                  text_file.write(f'{episode_id}_{"%.7d" % i} {text}\n')
+                  text_file.write(f'{utterance_id} {text}\n')
 
 # This joins consecutive segments at random, up to a specified max length.
 # The output segment list is shortened and the segments are longer. 
-def join_consecutive_segments_randomly(segments, max_length=10):
+def join_consecutive_segments_randomly(segments, max_length=15):
     
     segments_copy = segments.copy()
     joined_segments = []
@@ -49,7 +50,7 @@ def join_consecutive_segments_randomly(segments, max_length=10):
     i = 0
     max_i = len(segments_copy)
     while i < len(segments_copy):
-        num_segments_to_merge = random.randint(2, max_length)
+        num_segments_to_merge = random.randint(1, max_length)
 
         if i+num_segments_to_merge > max_i:
           num_segments_to_merge = max_i - i
@@ -163,8 +164,11 @@ def process(server_api_url, api_secret_key, dev_n=10, test_n=10, test_dev_episod
 
     write_kaldi_dataset(dev_podcasts, 'data/dev/')    
 
+    test_podcasts = []
     for elem in test_set:
-        process_podcast(server_api_url, api_secret_key, elem['title'])
+        test_podcasts += [process_podcast(server_api_url, api_secret_key, elem['title'])]
+
+    write_kaldi_dataset(dev_podcasts, 'data/test/')
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Create a dataset (Kaldi format) with the server.py API')
