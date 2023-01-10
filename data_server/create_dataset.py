@@ -229,15 +229,23 @@ def process(server_api_url, api_secret_key, dev_n=10, test_n=10, test_dev_episod
 
     dev_podcasts = []
     for elem in dev_set:
-        dev_podcasts += [process_podcast(server_api_url, api_secret_key, elem['title'],audio_dataset_location,replace_audio_dataset_location)]
+        dev_podcasts += [process_podcast(server_api_url, api_secret_key, elem['title'], audio_dataset_location, replace_audio_dataset_location)]
 
     write_kaldi_dataset(dev_podcasts, 'data/dev/')    
 
     test_podcasts = []
     for elem in test_set:
-        test_podcasts += [process_podcast(server_api_url, api_secret_key, elem['title'],audio_dataset_location,replace_audio_dataset_location)]
+        test_podcasts += [process_podcast(server_api_url, api_secret_key, elem['title'], audio_dataset_location, replace_audio_dataset_location)]
 
-    write_kaldi_dataset(dev_podcasts, 'data/test/')
+    write_kaldi_dataset(test_podcasts, 'data/test/')
+
+    train_podcasts = []
+    for elem in train_set:
+        train_podcasts += [process_podcast(server_api_url, api_secret_key, elem['title'], audio_dataset_location, replace_audio_dataset_location)]
+
+    write_kaldi_dataset(train_podcasts, 'data/train/')
+
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Create a dataset (Kaldi format) with the server.py API')
