@@ -2,6 +2,12 @@ import yaml
 import psycopg2
 import traceback
 import os
+import subprocess
+
+# inspired by https://stackoverflow.com/questions/31024968/using-ffmpeg-to-obtain-video-durations-in-python
+def get_duration(input_video):
+    cmd = ['ffprobe', '-i', input_video, '-show_entries', 'format=duration', '-v', 'quiet', '-sexagesimal', '-of', 'csv=p=0']
+    return subprocess.check_output(cmd).decode("utf-8").strip()
 
 def ensure_dir(f):
     d = os.path.dirname(f)
