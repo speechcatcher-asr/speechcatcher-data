@@ -44,26 +44,50 @@ def write_kaldi_dataset(podcasts, dataset_dir):
     with open(f'{dataset_dir}/text', 'w') as text_file, \
          open(f'{dataset_dir}/segments', 'w') as segments_file, \
          open(f'{dataset_dir}/utt2spk', 'w') as utt2spk_file, \
-         open(f'{dataset_dir}/wav.scp', 'w') as wav_scp_file:
+         open(f'{dataset_dir}/wav.scp', 'w') as wav_scp_file, \
+         open(f'{dataset_dir}/id2podcast.tsv', 'w') as id2podcast_file:
       for podcast in podcasts:
           for episode in podcast['episodes']:
-              filename = episode['transcript_file']
+              try:
+                  filename = episode['cache_audio_file']
+                  max_seconds = timestamp_to_seconds_float(get_duration(filename))
+                  print(filename, 'max_seconds:', max_seconds)
+              except:
+                  print('Couldnt get duration from', filename, 'warning: ignoring entire file.')
+                  continue
+
               author = episode['authors'] + '_' + podcast['title']
               episode_id = hashlib.sha1(filename.encode()).hexdigest()[:20]
               speaker_id = hashlib.sha1(author.encode()).hexdigest()[:20]
+              recording_id = f'{speaker_id}_{episode_id}'
+
               wav_scp_file.write(f'{episode_id} {filename}\n')
+              id2podcast_file.write(f'{recording_id}\t{podcast["title"]}\n')
+
               for i, segment in enumerate(episode['segments']):
                   start = timestamp_to_seconds_float(segment['start'])
                   end = timestamp_to_seconds_float(segment['end'])
+
+                  if start > max_seconds:
+                      print(f'Warning, overflow in vtt for start time stamp for {filename}... ignore and skip this and the following segments.')
+                      break
+
+                  if end > max_seconds:
+                      print(f'Warning, overflow in vtt end time stamp for {filename}... trying to fix.')
+                      end = max_seconds
+
                   text = segment['text']
                   recording_id = f'{speaker_id}_{episode_id}'
                   utterance_id = f'{speaker_id}_{episode_id}_{"%.7d" % i}'
+
                   # format of the segments file is: <utterance-id> <recording-id> <segment-begin> <segment-end> 
                   segments_file.write(f'{utterance_id} {recording_id} {start} {end}\n')
                   # format of the text file is: <utterance-id> <text> 
                   text_file.write(f'{utterance_id} {text}\n')
                   # format of the utt2spk file is: <utterance-id> <speaker-id>
                   utt2spk_file.write(f'{utterance_id} {speaker_id}\n')
+
+    print('Wrote Kaldi/Espnet dataset to:', dataset_dir)
 
 # This joins consecutive segments at random, up to a specified max length.
 # The output segment list is shortened and the segments are longer. 
@@ -133,7 +157,7 @@ def parse_vtt_segments(vtt_content):
     return segments
 
 # Process all episodes of a particular podcast
-def process_podcast(server_api_url, api_secret_key, title):
+def process_podcast(server_api_url, api_secret_key, title, audio_dataset_location='', replace_audio_dataset_location=''):
 
     request_url = f"{server_api_url}/get_episode_list/{api_secret_key}"
     data = {'podcast_title': title}
@@ -144,13 +168,21 @@ def process_podcast(server_api_url, api_secret_key, title):
 
     episode_list = response.json()
 
-    print(episode_list)
+    #print(episode_list)
 
     episodes = []
 
     for episode in episode_list:
         print('parsing:', episode['episode_title'])
         vtt_content = download_vtt_file(episode['transcript_file_url'])
+
+        # If replace_audio_dataset_location isn't empty, change the server reported (absolute) filenames.
+        # This is useful if you store the dataset on different servers in different directories, e.g.
+        # to change all filenames containing /var/www -> /srv (replace_audio_dataset_location='/var/www', audio_dataset_location='/srv')
+        
+        if replace_audio_dataset_location != '':
+            episode['cache_audio_file'] = episode['cache_audio_file'].replace(replace_audio_dataset_location, audio_dataset_location)
+            episode['transcript_file'] = episode['transcript_file'].replace(replace_audio_dataset_location, audio_dataset_location)
 
         segments = parse_vtt_segments(vtt_content) 
         segments_merged = join_consecutive_segments_randomly(segments)
@@ -163,7 +195,8 @@ def process_podcast(server_api_url, api_secret_key, title):
     return {'title': title, 'episodes': episodes}
 
 # Divide dataset into train/dev/test and start processing the podcasts
-def process(server_api_url, api_secret_key, dev_n=10, test_n=10, test_dev_episodes_threshold=10):
+def process(server_api_url, api_secret_key, dev_n=10, test_n=10, test_dev_episodes_threshold=10,
+                                     audio_dataset_location='', replace_audio_dataset_location=''):
     
     request_url = f"{server_api_url}/get_podcast_list/de/{api_secret_key}"
     response = requests.get(request_url)
@@ -180,18 +213,18 @@ def process(server_api_url, api_secret_key, dev_n=10, test_n=10, test_dev_episod
 
     train_set = [x for x in podcast_list if (x not in dev_set) and (x not in test_set)]
 
-    print(dev_set)
-    print(test_set)
+    #print(dev_set)
+    #print(test_set)
 
     dev_podcasts = []
     for elem in dev_set:
-        dev_podcasts += [process_podcast(server_api_url, api_secret_key, elem['title'])]
+        dev_podcasts += [process_podcast(server_api_url, api_secret_key, elem['title'],audio_dataset_location,replace_audio_dataset_location)]
 
     write_kaldi_dataset(dev_podcasts, 'data/dev/')    
 
     test_podcasts = []
     for elem in test_set:
-        test_podcasts += [process_podcast(server_api_url, api_secret_key, elem['title'])]
+        test_podcasts += [process_podcast(server_api_url, api_secret_key, elem['title'],audio_dataset_location,replace_audio_dataset_location)]
 
     write_kaldi_dataset(dev_podcasts, 'data/test/')
 
@@ -199,14 +232,21 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Create a dataset (Kaldi format) with the server.py API')
     parser.add_argument('-d', '--dev', default=10, dest='dev_n', help='Sample dev set from n speakers/podcasts', type=int)
     parser.add_argument('-t', '--test', default=10, dest='test_n', help='Sample test set from n speakers/podcasts', type=int)
+    parser.add_argument('-n', '--test_dev_episodes_threshold', default=10, dest='test_dev_episodes_threshold',
+      help='Only sample the test and dev set from shorter podcasts, where len(episodes) is smaller than this value', type=int)
     parser.add_argument('--debug', dest='debug', help='Start with debugging enabled',
                         action='store_true', default=False)
 
     args = parser.parse_args()
 
+    server_api_url: "https://speechcatcher.net/apiv1/"
+    audio_dataset_location: "/srv/enc/speechcatcher.net"
+    replace_audio_dataset_location: "/var/www/speechcatcher.net"
+
     random.seed(42)
     config = load_config()
     api_secret_key = config["secret_api_key"]
-    # FIXME: move to yaml
-    server_api_url = 'https://speechcatcher.net/apiv1/'
-    process(server_api_url, api_secret_key, args.dev_n, args.test_n)
+    server_api_url = config["server_api_url"]
+    audio_dataset_location = config["audio_dataset_location"]
+    replace_audio_dataset_location = config["replace_audio_dataset_location"]
+    process(server_api_url, api_secret_key, args.dev_n, args.test_n, args.test_dev_episodes_threshold, audio_dataset_location, replace_audio_dataset_location)
