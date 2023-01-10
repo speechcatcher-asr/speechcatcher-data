@@ -35,7 +35,7 @@ def get_podcast_list(language, api_access_key):
 
     try:
         p_cursor.execute(f'SELECT distinct(podcast_title), count(podcast_episode_id) from podcasts '
-                     'WHERE language=%s GROUP BY podcast_title', (language,) )
+                     f'WHERE {language=} GROUP BY podcast_title')
 
         records = p_cursor.fetchall()
     except:
@@ -59,7 +59,7 @@ def get_episode_list(api_access_key):
 
     try:
         p_cursor.execute(f'SELECT {podcast_columns} from podcasts '
-            'WHERE podcast_title=%s and transcript_file<>%s', (podcast_title, '') )
+            f'WHERE {podcast_title=} and transcript_file<>{''}')
 
         records = p_cursor.fetchall()
     except:
@@ -113,8 +113,8 @@ def get_work(language, api_access_key):
     
     # First sample an author (that still has empty transcripts)
     p_cursor.execute(f'SELECT authors,count({sql_table_ids}) from podcasts '
-                     'WHERE transcript_file=%s and language=%s GROUP BY authors ORDER BY RANDOM() '
-                     'LIMIT 1', ('',language) )
+                     f'WHERE transcript_file={''} and {language=} GROUP BY authors ORDER BY RANDOM() '
+                     'LIMIT 1')
     record = p_cursor.fetchone()
 
     print("Sampled author:",record)
@@ -125,8 +125,8 @@ def get_work(language, api_access_key):
         # Use the sampled author to sample a random untranscribed episode from that author
         p_cursor.execute(f'SELECT {sql_table_ids}, episode_title, authors, language, episode_audio_url, cache_audio_url, '
                             f'cache_audio_file, transcript_file FROM {sql_table} '
-                            'WHERE transcript_file=%s and language=%s and authors=%s ORDER BY RANDOM() '
-                            'LIMIT 1', ('',language, authors) )
+                            f'WHERE transcript_file={''} and {language=} and {authors=} ORDER BY RANDOM() '
+                            'LIMIT 1')
 
         record = p_cursor.fetchone()
 
@@ -151,7 +151,7 @@ def register_wip(wid, api_access_key):
     if api_secret_key != api_access_key:
         return jsonify({'success': False, 'error':'api_access_key invalid'})
 
-    p_cursor.execute(f'SELECT {sql_table_ids}, transcript_file FROM {sql_table} WHERE {sql_table_ids}=%s', (str(wid),))
+    p_cursor.execute(f'SELECT {sql_table_ids}, transcript_file FROM {sql_table} WHERE {sql_table_ids}={wid}')
     record = p_cursor.fetchone()
 
     table_id, transcript_file = record
@@ -161,7 +161,7 @@ def register_wip(wid, api_access_key):
     elif transcript_file != '':
         return jsonify({'success': False, 'error': str(wid)+' already transcribed'})
 
-    p_cursor.execute(f"UPDATE {sql_table} SET transcript_file = 'in_progress' WHERE {sql_table_ids}=%s" , (str(wid),))
+    p_cursor.execute(f"UPDATE {sql_table} SET transcript_file = 'in_progress' WHERE {sql_table_ids}={wid}")
     p_connection.commit()
 
     return jsonify({'success': True})
@@ -175,7 +175,7 @@ def upload_result(wid, api_access_key):
     if 'file' not in request.files:
         return jsonify({'success': False, 'error':'no file found in POST request'})
 
-    p_cursor.execute(f'SELECT {sql_table_ids}, transcript_file, cache_audio_file, episode_audio_url FROM {sql_table} WHERE {sql_table_ids}=%s', (str(wid),))
+    p_cursor.execute(f'SELECT {sql_table_ids}, transcript_file, cache_audio_file, episode_audio_url FROM {sql_table} WHERE {sql_table_ids}={wid}')
     record = p_cursor.fetchone()
 
     table_id, transcript_file, cache_audio_file, episode_audio_url = record
@@ -201,7 +201,7 @@ def upload_result(wid, api_access_key):
         print('Saving vtt file to:', full_filename)
         myfile.save(full_filename)
 
-        p_cursor.execute(f'UPDATE {sql_table} SET transcript_file=%s WHERE {sql_table_ids}=%s', (full_filename, str(wid)))
+        p_cursor.execute(f'UPDATE {sql_table} SET transcript_file={full_filename} WHERE {sql_table_ids}={wid}')
         p_connection.commit()
     else:
         return jsonify({'success': False, 'error': str(wid)+' could not access upload file'})
@@ -215,7 +215,7 @@ def cancel_work(wid, api_access_key):
     if api_secret_key != api_access_key:
         return jsonify({'error':'api_access_key invalid'})
 
-    p_cursor.execute(f'SELECT {sql_table_ids}, transcript_file FROM {sql_table} WHERE {sql_table_ids}=%s', (str(wid),))
+    p_cursor.execute(f'SELECT {sql_table_ids}, transcript_file FROM {sql_table} WHERE {sql_table_ids}={wid}')
     record = p_cursor.fetchone()
 
     table_id, transcript_file = record
@@ -225,7 +225,7 @@ def cancel_work(wid, api_access_key):
             return jsonify({'success': False, 'error': str(wid)+' already transcribed'})
         return jsonify({'success': False, 'error': str(wid)+' not in progress'})
 
-    p_cursor.execute(f"UPDATE {sql_table} SET transcript_file = '' WHERE {sql_table_ids}=%s" , (str(wid),))
+    p_cursor.execute(f"UPDATE {sql_table} SET transcript_file = '' WHERE {sql_table_ids}={wid}")
     p_connection.commit()
 
     return jsonify({'success': True})
