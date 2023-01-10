@@ -185,6 +185,16 @@ def process_podcast(server_api_url, api_secret_key, title, audio_dataset_locatio
 
     for episode in episode_list:
         print('parsing:', episode['episode_title'])
+
+        # ignore in_progress and empty urls
+        if episode['transcript_file_url']=='in_progress':
+            print('Warning, ignoring in_progress episode url.')
+            continue
+
+        if episode['transcript_file_url']=='':
+            print('Warning, ignoring empty episode url.')
+            continue
+
         vtt_content = download_vtt_file(episode['transcript_file_url'])
 
         # If replace_audio_dataset_location isn't empty, change the server reported (absolute) filenames.
