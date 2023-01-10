@@ -45,13 +45,15 @@ def write_kaldi_dataset(podcasts, dataset_dir):
          open(f'{dataset_dir}/segments', 'w') as segments_file, \
          open(f'{dataset_dir}/utt2spk', 'w') as utt2spk_file, \
          open(f'{dataset_dir}/wav.scp', 'w') as wav_scp_file, \
-         open(f'{dataset_dir}/id2podcast.tsv', 'w') as id2podcast_file:
+         open(f'{dataset_dir}/id2podcast.tsv', 'w') as id2podcast_file \
+         open(f'{dataset_dir}/utt2dur', 'w') as utt2dur_file:
       for podcast in podcasts:
           for episode in podcast['episodes']:
               try:
                   filename = episode['cache_audio_file']
-                  max_seconds = timestamp_to_seconds_float(get_duration(filename))
-                  print(filename, 'max_seconds:', max_seconds)
+                  timestamp = get_duration(filename)
+                  max_seconds = timestamp_to_seconds_float(timestamp)
+                  print(filename, 'max_seconds:', max_seconds, 'timestamp', timestamp)
               except:
                   print('Couldnt get duration from', filename, 'warning: ignoring entire file.')
                   continue
@@ -61,8 +63,9 @@ def write_kaldi_dataset(podcasts, dataset_dir):
               speaker_id = hashlib.sha1(author.encode()).hexdigest()[:20]
               recording_id = f'{speaker_id}_{episode_id}'
 
-              wav_scp_file.write(f'{episode_id} {filename}\n')
+              wav_scp_file.write(f'{recording_id} {filename}\n')
               id2podcast_file.write(f'{recording_id}\t{podcast["title"]}\n')
+              utt2dur_file.write(f'{recording_id} {max_seconds}\n')
 
               for i, segment in enumerate(episode['segments']):
                   start = timestamp_to_seconds_float(segment['start'])
