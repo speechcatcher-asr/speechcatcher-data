@@ -17,14 +17,22 @@ from utils import *
 
 def timestamp_to_seconds_float(str_timestamp):
     time_parts = re.split(':|\.', str_timestamp)
+    
+    if len(time_parts[-1]) == 3:
+        milliseconds_div = 1000.
+    elif len(time_parts[-1]) == 6:
+        milliseconds_div = 1000000.
+    else:
+        raise ValueError("Invalid timestamp format (cant figure out milisecond format):",str_timestamp)
+
     if len(time_parts) == 4:
         hours, minutes, seconds, milliseconds = [float(time_part) for time_part in time_parts]
-        return (hours * 3600.) + (minutes * 60.) + seconds + (milliseconds / 1000.)
+        return (hours * 3600.) + (minutes * 60.) + seconds + (milliseconds / milliseconds_div)
     elif len(time_parts) == 3:
         minutes, seconds, milliseconds = [float(time_part) for time_part in time_parts]
-        return (minutes * 60.) + seconds + (milliseconds / 1000.)
+        return (minutes * 60.) + seconds + (milliseconds / milliseconds_div)
     else:
-        raise ValueError("Invalid timestamp format")
+        raise ValueError("Invalid timestamp format (cant convert to float):",str_timestamp)
 
 # Write out a dataset of episodes to <dataset_dir>
 # podcasts is a list of podcasts, where a podcast has the following structure:
