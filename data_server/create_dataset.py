@@ -6,7 +6,25 @@ import requests
 import random
 import argparse
 import hashlib
+import re
 from utils import *
+
+# Converts a vtt timestamp string to float (in seconds)
+# examples:
+# 00:59.999 -> 59.999
+# 05:36.450 -> 336.45
+# 01:23:45.678 -> 5025.678
+
+def timestamp_to_seconds_float(str_timestamp):
+    time_parts = re.split(':|\.', str_timestamp)
+    if len(time_parts) == 4:
+        hours, minutes, seconds, milliseconds = [float(time_part) for time_part in time_parts]
+        return (hours * 3600.) + (minutes * 60.) + seconds + (milliseconds / 1000.)
+    elif len(time_parts) == 3:
+        minutes, seconds, milliseconds = [float(time_part) for time_part in time_parts]
+        return (minutes * 60.) + seconds + (milliseconds / 1000.)
+    else:
+        raise ValueError("Invalid timestamp format")
 
 # Write out a dataset of episodes to <dataset_dir>
 # podcasts is a list of podcasts, where a podcast has the following structure:
@@ -15,30 +33,37 @@ from utils import *
 #                           episode = {'transcript_file': str, 'segments': list of segments, 'authors': str}
 #                                                               |
 #                                                               segment = {'text': str, 'start': str, 'end': str}
-# The start and end time stamps should already be converted to Kaldi format, i.e. decimals in seconds (as a string) 
+# The start and end time stamps should already be converted to Kaldi format, i.e. decimals in seconds (as a string), see above timestamp_to_seconds_float function.
 #
-# We derive a sha1 hash from the filename as episode id. 
+# We derive a sha1 hash from the filename as episode id and from author+podcast as author id (first 20 chars). Note that the final utterance must be prefixed by the speaker id: 
+# > The main assumption is that the sorting order of utt2spk will stay the same, independently whether you will sort by speaker or utterance. We suggest making the utterances to be prefixed by the speaker ids -- that should resolve your issues 
+# see https://groups.google.com/g/kaldi-help/c/n8es2XWVkec?pli=1
 
-# TODO: add utt2spk
 def write_kaldi_dataset(podcasts, dataset_dir):
     ensure_dir(dataset_dir)
     with open(f'{dataset_dir}/text', 'w') as text_file, \
          open(f'{dataset_dir}/segments', 'w') as segments_file, \
+         open(f'{dataset_dir}/utt2spk', 'w') as utt2spk_file, \
          open(f'{dataset_dir}/wav.scp', 'w') as wav_scp_file:
       for podcast in podcasts:
           for episode in podcast['episodes']:
               filename = episode['transcript_file']
-              episode_id = hashlib.sha1(filename.encode()).hexdigest()
+              author = episode['authors'] + '_' + podcast['title']
+              episode_id = hashlib.sha1(filename.encode()).hexdigest()[:20]
+              speaker_id = hashlib.sha1(author.encode()).hexdigest()[:20]
               wav_scp_file.write(f'{episode_id} {filename}\n')
               for i, segment in enumerate(episode['segments']):
-                  start = segment['start']
-                  end = segment['end']
+                  start = timestamp_to_seconds_float(segment['start'])
+                  end = timestamp_to_seconds_float(segment['end'])
                   text = segment['text']
-                  utterance_id = f'{episode_id}_{"%.7d" % i}'
+                  recording_id = f'{speaker_id}_{episode_id}'
+                  utterance_id = f'{speaker_id}_{episode_id}_{"%.7d" % i}'
                   # format of the segments file is: <utterance-id> <recording-id> <segment-begin> <segment-end> 
-                  segments_file.write(f'{utterance_id} {episode_id} {start} {end}\n')
+                  segments_file.write(f'{utterance_id} {recording_id} {start} {end}\n')
                   # format of the text file is: <utterance-id> <text> 
                   text_file.write(f'{utterance_id} {text}\n')
+                  # format of the utt2spk file is: <utterance-id> <speaker-id>
+                  utt2spk_file.write(f'{utterance_id} {speaker_id}\n')
 
 # This joins consecutive segments at random, up to a specified max length.
 # The output segment list is shortened and the segments are longer. 
