@@ -7,6 +7,7 @@ import random
 import argparse
 import hashlib
 import re
+import traceback
 from utils import *
 
 # Converts a vtt timestamp string to float (in seconds)
@@ -175,7 +176,7 @@ def process_podcast(server_api_url, api_secret_key, title, audio_dataset_locatio
 
     print('server_api_url:', request_url)
 
-    response = requests.post(request_url, data=data)
+    response = requests.post(request_url, data=data, timeout=120)
 
     episode_list = response.json()
 
@@ -184,34 +185,38 @@ def process_podcast(server_api_url, api_secret_key, title, audio_dataset_locatio
     episodes = []
 
     for episode in episode_list:
-        print('parsing:', episode['episode_title'])
+        try:
+            print('parsing:', episode['episode_title'])
 
-        # ignore in_progress and empty urls
-        if episode['transcript_file_url']=='in_progress':
-            print('Warning, ignoring in_progress episode url.')
-            continue
+            # ignore in_progress and empty urls
+            if episode['transcript_file_url']=='in_progress':
+                print('Warning, ignoring in_progress episode url.')
+                continue
 
-        if episode['transcript_file_url']=='':
-            print('Warning, ignoring empty episode url.')
-            continue
+            if episode['transcript_file_url']=='':
+                print('Warning, ignoring empty episode url.')
+                continue
 
-        vtt_content = download_vtt_file(episode['transcript_file_url'])
+            vtt_content = download_vtt_file(episode['transcript_file_url'])
 
-        # If replace_audio_dataset_location isn't empty, change the server reported (absolute) filenames.
-        # This is useful if you store the dataset on different servers in different directories, e.g.
-        # to change all filenames containing /var/www -> /srv (replace_audio_dataset_location='/var/www', audio_dataset_location='/srv')
-        
-        if replace_audio_dataset_location != '':
-            episode['cache_audio_file'] = episode['cache_audio_file'].replace(replace_audio_dataset_location, audio_dataset_location)
-            episode['transcript_file'] = episode['transcript_file'].replace(replace_audio_dataset_location, audio_dataset_location)
+            # If replace_audio_dataset_location isn't empty, change the server reported (absolute) filenames.
+            # This is useful if you store the dataset on different servers in different directories, e.g.
+            # to change all filenames containing /var/www -> /srv (replace_audio_dataset_location='/var/www', audio_dataset_location='/srv')
+            
+            if replace_audio_dataset_location != '':
+                episode['cache_audio_file'] = episode['cache_audio_file'].replace(replace_audio_dataset_location, audio_dataset_location)
+                episode['transcript_file'] = episode['transcript_file'].replace(replace_audio_dataset_location, audio_dataset_location)
 
-        segments = parse_vtt_segments(vtt_content) 
-        segments_merged = join_consecutive_segments_randomly(segments)
-        
-        episode_copy = episode.copy()
-        episode_copy['segments'] = segments_merged
+            segments = parse_vtt_segments(vtt_content) 
+            segments_merged = join_consecutive_segments_randomly(segments)
+            
+            episode_copy = episode.copy()
+            episode_copy['segments'] = segments_merged
 
-        episodes.append(episode_copy)
+            episodes.append(episode_copy)
+        except:
+            print('Error processing episode:', episode['episode_title'],'skipping...')
+            traceback.print_exc()
 
     return {'title': title, 'episodes': episodes}
 
@@ -251,8 +256,12 @@ def process(server_api_url, api_secret_key, dev_n=10, test_n=10, test_dev_episod
 
     train_podcasts = []
     for elem in train_set:
-        train_podcasts += [process_podcast(server_api_url, api_secret_key, elem['title'], audio_dataset_location, replace_audio_dataset_location)]
-
+        try:
+            train_podcasts += [process_podcast(server_api_url, api_secret_key, elem['title'], audio_dataset_location, replace_audio_dataset_location)]
+        except:
+            print('Warning: error in ', elem['title'], 'ignoring entire podcast...')
+            traceback.print_exc()
+            continue
     write_kaldi_dataset(train_podcasts, 'data/train/')
 
 
