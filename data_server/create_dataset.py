@@ -88,7 +88,7 @@ def write_kaldi_dataset(podcasts, dataset_dir):
                       print(f'Warning, overflow in vtt end time stamp for {filename}... trying to fix.')
                       end = max_seconds
 
-                  if end < start:
+                  if end <= start:
                       print(f'End timestamp now underflows start, ignoring entire segment')
                       break
 
