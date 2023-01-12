@@ -173,7 +173,7 @@ def parse_vtt_segments(vtt_content):
     return segments
 
 # Process all episodes of a particular podcast
-def process_podcast(server_api_url, api_secret_key, title, audio_dataset_location='', replace_audio_dataset_location=''):
+def process_podcast(server_api_url, api_secret_key, title, audio_dataset_location='', replace_audio_dataset_location='', change_audio_fileending=''):
 
     request_url = f"{server_api_url}/get_episode_list/{api_secret_key}"
     data = {'podcast_title': title}
@@ -211,6 +211,12 @@ def process_podcast(server_api_url, api_secret_key, title, audio_dataset_locatio
                 episode['cache_audio_file'] = episode['cache_audio_file'].replace(replace_audio_dataset_location, audio_dataset_location)
                 episode['transcript_file'] = episode['transcript_file'].replace(replace_audio_dataset_location, audio_dataset_location)
 
+            if change_audio_fileending != '':
+                if episode['cache_audio_file'].endswith('.mp3'):
+                    episode['cache_audio_file'] = episode['cache_audio_file'][:-4] + change_audio_fileending
+                elif episode['cache_audio_file'].endswith('.opus'):
+                    episode['cache_audio_file'] = episode['cache_audio_file'][:-5] + change_audio_fileending
+
             segments = parse_vtt_segments(vtt_content) 
             segments_merged = join_consecutive_segments_randomly(segments)
             
@@ -226,7 +232,7 @@ def process_podcast(server_api_url, api_secret_key, title, audio_dataset_locatio
 
 # Divide dataset into train/dev/test and start processing the podcasts
 def process(server_api_url, api_secret_key, dev_n=10, test_n=10, test_dev_episodes_threshold=10,
-                                     audio_dataset_location='', replace_audio_dataset_location=''):
+                                     audio_dataset_location='', replace_audio_dataset_location='', change_audio_fileending=''):
     
     request_url = f"{server_api_url}/get_podcast_list/de/{api_secret_key}"
     response = requests.get(request_url)
@@ -248,20 +254,20 @@ def process(server_api_url, api_secret_key, dev_n=10, test_n=10, test_dev_episod
 
     dev_podcasts = []
     for elem in dev_set:
-        dev_podcasts += [process_podcast(server_api_url, api_secret_key, elem['title'], audio_dataset_location, replace_audio_dataset_location)]
+        dev_podcasts += [process_podcast(server_api_url, api_secret_key, elem['title'], audio_dataset_location, replace_audio_dataset_location, change_audio_fileending)]
 
     write_kaldi_dataset(dev_podcasts, 'data/dev/')    
 
     test_podcasts = []
     for elem in test_set:
-        test_podcasts += [process_podcast(server_api_url, api_secret_key, elem['title'], audio_dataset_location, replace_audio_dataset_location)]
+        test_podcasts += [process_podcast(server_api_url, api_secret_key, elem['title'], audio_dataset_location, replace_audio_dataset_location, change_audio_fileending)]
 
     write_kaldi_dataset(test_podcasts, 'data/test/')
 
     train_podcasts = []
     for elem in train_set:
         try:
-            train_podcasts += [process_podcast(server_api_url, api_secret_key, elem['title'], audio_dataset_location, replace_audio_dataset_location)]
+            train_podcasts += [process_podcast(server_api_url, api_secret_key, elem['title'], audio_dataset_location, replace_audio_dataset_location, change_audio_fileending)]
         except:
             print('Warning: error in ', elem['title'], 'ignoring entire podcast...')
             traceback.print_exc()
@@ -287,4 +293,5 @@ if __name__ == '__main__':
     server_api_url = config["server_api_url"]
     audio_dataset_location = config["audio_dataset_location"]
     replace_audio_dataset_location = config["replace_audio_dataset_location"]
-    process(server_api_url, api_secret_key, args.dev_n, args.test_n, args.test_dev_episodes_threshold, audio_dataset_location, replace_audio_dataset_location)
+    change_audio_fileending = config["change_audio_fileending_to"]
+    process(server_api_url, api_secret_key, args.dev_n, args.test_n, args.test_dev_episodes_threshold, audio_dataset_location, replace_audio_dataset_location, change_audio_fileending)
