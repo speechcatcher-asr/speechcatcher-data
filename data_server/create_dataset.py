@@ -10,6 +10,8 @@ import re
 import traceback
 from utils import *
 
+sox_str = "%s sox %s -t wav -r 16k -b 16 -e signed -c 1 - |\n"
+
 # Converts a vtt timestamp string to float (in seconds)
 # examples:
 # 00:59.999 -> 59.999
@@ -48,7 +50,7 @@ def timestamp_to_seconds_float(str_timestamp):
 # > The main assumption is that the sorting order of utt2spk will stay the same, independently whether you will sort by speaker or utterance. We suggest making the utterances to be prefixed by the speaker ids -- that should resolve your issues 
 # see https://groups.google.com/g/kaldi-help/c/n8es2XWVkec?pli=1
 
-def write_kaldi_dataset(podcasts, dataset_dir):
+def write_kaldi_dataset(podcasts, dataset_dir, use_sox_str=True):
     ensure_dir(dataset_dir)
     with open(f'{dataset_dir}/text', 'w') as text_file, \
          open(f'{dataset_dir}/segments', 'w') as segments_file, \
@@ -67,12 +69,21 @@ def write_kaldi_dataset(podcasts, dataset_dir):
                   print('Couldnt get duration from', filename, 'warning: ignoring entire file.')
                   continue
 
+              vtt_file = episode['transcript_file']
+
+              if '/corrupted/' in vtt_file:
+                  print(vtt_file, 'vtt file is corrputed, skipping!')
+                  continue
+
               author = episode['authors'] + '_' + podcast['title']
               episode_id = hashlib.sha1(filename.encode()).hexdigest()[:20]
               speaker_id = hashlib.sha1(author.encode()).hexdigest()[:20]
               recording_id = f'{speaker_id}_{episode_id}'
 
-              wav_scp_file.write(f'{recording_id} {filename}\n')
+              if use_sox_str:
+                  wav_scp_file.write(sox_str % (recording_id, filename))
+              else:
+                  wav_scp_file.write(f'{recording_id} {filename}\n')
               id2podcast_file.write(f'{recording_id}\t{podcast["title"]}\n')
               utt2dur_file.write(f'{recording_id} {max_seconds}\n')
 
