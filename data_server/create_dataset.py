@@ -11,6 +11,22 @@ import traceback
 from utils import *
 
 sox_str = "%s sox %s -t wav -r 16k -b 16 -e signed -c 1 - |\n"
+sox_str = '%s ffmpeg -i "%s" -acodec pcm_s16le -ar 16000 -ac 1 -f wav - |\n'
+
+ex_file_path = 'exclusion_chars/de.txt' 
+
+def create_exclusion_dict(ex_file_path):
+    exclusion_dict = {}
+    with open(file_path, "r") as f:
+        for line in f:
+            char = line.strip()
+            exclusion_dict[char] = True
+    return exclusion_dict
+
+exclusion_dict = create_exclusion_dict(ex_file_path)
+
+def check_exclusion(string, exclusion_dict):
+    return any(exclusion_dict.get(char, False) for char in string)
 
 # Converts a vtt timestamp string to float (in seconds)
 # examples:
@@ -104,6 +120,12 @@ def write_kaldi_dataset(podcasts, dataset_dir, use_sox_str=True):
                       break
 
                   text = segment['text']
+
+                  # skip if text contains a bogus char
+                  if check_exclusion(text, exclusion_dict):
+                      print(f'Exclusion character found, ignoring entire segment')
+                      continue
+
                   recording_id = f'{speaker_id}_{episode_id}'
                   utterance_id = f'{speaker_id}_{episode_id}_{"%.7d" % i}'
 
