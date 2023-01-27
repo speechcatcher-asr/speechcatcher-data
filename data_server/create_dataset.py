@@ -17,7 +17,7 @@ ex_file_path = 'exclusion_chars/de.txt'
 
 def create_exclusion_dict(ex_file_path):
     exclusion_dict = {}
-    with open(file_path, "r") as f:
+    with open(ex_file_path, "r") as f:
         for line in f:
             char = line.strip()
             exclusion_dict[char] = True
