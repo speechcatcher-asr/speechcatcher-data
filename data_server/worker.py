@@ -7,6 +7,8 @@ import io
 import time
 from utils import load_config
 
+from whisper.utils import format_timestamp
+
 from typing import Iterator, TextIO
 
 # The write_vtt function was replaced in whisper, its a bit annoying
