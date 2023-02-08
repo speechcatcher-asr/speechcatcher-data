@@ -5,8 +5,22 @@ import argparse
 import whisper
 import io
 import time
-from whisper.utils import write_vtt
 from utils import load_config
+
+from typing import Iterator, TextIO
+
+# The write_vtt function was replaced in whisper, its a bit annoying
+# this is the old version, copied from a previous version of whisper
+# see https://github.com/openai/whisper/commit/da600abd2b296a5450770b872c3765d0a5a5c769
+def write_vtt(transcript: Iterator[dict], file: TextIO):
+    print("WEBVTT\n", file=file)
+    for segment in transcript:
+        print(
+            f"{format_timestamp(segment['start'])} --> {format_timestamp(segment['end'])}\n"
+            f"{segment['text'].strip().replace('-->', '->')}\n",
+            file=file,
+            flush=True,
+        )
 
 def cancel_work(server, secret_api_key, wid, api_version='apiv1'):
     print(f'Trying to cancel {wid}...')
