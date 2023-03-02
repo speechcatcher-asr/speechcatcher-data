@@ -8,6 +8,8 @@ import argparse
 import hashlib
 import re
 import traceback
+import concurrent.futures
+import sys
 from utils import *
 
 sox_str = "%s sox %s -t wav -r 16k -b 16 -e signed -c 1 - |\n"
@@ -205,6 +207,14 @@ def parse_vtt_segments(vtt_content):
 
     return segments
 
+# process_podcast wrapper to catch exceptions in process_podcast
+def process_podcast_wrapper(server_api_url, api_secret_key, elem_title, audio_dataset_location, replace_audio_dataset_location, change_audio_fileending):
+    try:
+        return process_podcast(server_api_url, api_secret_key, elem_title, audio_dataset_location, replace_audio_dataset_location, change_audio_fileending)
+    except:
+        print('Warning: error in ', elem_title, 'ignoring entire podcast...')
+        traceback.print_exc()
+
 # Process all episodes of a particular podcast
 def process_podcast(server_api_url, api_secret_key, title, audio_dataset_location='', replace_audio_dataset_location='', change_audio_fileending=''):
 
@@ -285,26 +295,63 @@ def process(server_api_url, api_secret_key, dev_n=10, test_n=10, test_dev_episod
     #print(dev_set)
     #print(test_set)
 
+    #dev_podcasts = []
+    #for elem in dev_set:
+    #    dev_podcasts += [process_podcast(server_api_url, api_secret_key, elem['title'], audio_dataset_location, replace_audio_dataset_location, change_audio_fileending)]
+
+    # create dev set in parallel
     dev_podcasts = []
-    for elem in dev_set:
-        dev_podcasts += [process_podcast(server_api_url, api_secret_key, elem['title'], audio_dataset_location, replace_audio_dataset_location, change_audio_fileending)]
+    with concurrent.futures.ProcessPoolExecutor() as executor:
+        futures = [executor.submit(process_podcast, server_api_url, api_secret_key, elem['title'], audio_dataset_location, replace_audio_dataset_location, change_audio_fileending) for elem in dev_set]
+    
+        # Use the as_completed() function to iterate over the completed futures and retrieve their results
+        for future in concurrent.futures.as_completed(futures):
+            result = future.result()
+            dev_podcasts.append(result)
 
     write_kaldi_dataset(dev_podcasts, 'data/dev/')    
 
+    # create test set in parallel    
     test_podcasts = []
-    for elem in test_set:
-        test_podcasts += [process_podcast(server_api_url, api_secret_key, elem['title'], audio_dataset_location, replace_audio_dataset_location, change_audio_fileending)]
+    with concurrent.futures.ProcessPoolExecutor() as executor:
+        futures = [executor.submit(process_podcast, server_api_url, api_secret_key, elem['title'], audio_dataset_location, replace_audio_dataset_location, change_audio_fileending) for elem in test_set]
+
+        for future in concurrent.futures.as_completed(futures):
+            result = future.result()
+            test_podcasts.append(result)
+
+   # test_podcasts = []
+   # for elem in test_set:
+   #     test_podcasts += [process_podcast(server_api_url, api_secret_key, elem['title'], audio_dataset_location, replace_audio_dataset_location, change_audio_fileending)]
 
     write_kaldi_dataset(test_podcasts, 'data/test/')
 
+    # create train set in parallel
+
     train_podcasts = []
-    for elem in train_set:
+
+    with concurrent.futures.ProcessPoolExecutor() as executor:
+        podcast_futures = [executor.submit(process_podcast_wrapper, server_api_url, api_secret_key, elem['title'],
+                           audio_dataset_location, replace_audio_dataset_location, change_audio_fileending) for elem in train_set]
         try:
-            train_podcasts += [process_podcast(server_api_url, api_secret_key, elem['title'], audio_dataset_location, replace_audio_dataset_location, change_audio_fileending)]
-        except:
-            print('Warning: error in ', elem['title'], 'ignoring entire podcast...')
-            traceback.print_exc()
-            continue
+            for future in concurrent.futures.as_completed(podcast_futures):
+                podcast = future.result()
+                if podcast is not None:
+                    train_podcasts.append(podcast)
+        except KeyboardInterrupt:
+            print('User abort: Cancelling remaining tasks')
+            for future in podcast_futures:
+                future.cancel()
+            concurrent.futures.wait(podcast_futures)
+            sys.exit(-1)
+    #train_podcasts = []
+    #for elem in train_set:
+    #    try:
+    #        train_podcasts += [process_podcast(server_api_url, api_secret_key, elem['title'], audio_dataset_location, replace_audio_dataset_location, change_audio_fileending)]
+    #    except:
+    #        print('Warning: error in ', elem['title'], 'ignoring entire podcast...')
+    #        traceback.print_exc()
+    #        continue
     write_kaldi_dataset(train_podcasts, 'data/train/')
 
 
