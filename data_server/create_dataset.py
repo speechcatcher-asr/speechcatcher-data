@@ -12,7 +12,10 @@ import concurrent.futures
 import sys
 from utils import *
 
-sox_str = "%s sox %s -t wav -r 16k -b 16 -e signed -c 1 - |\n"
+# You can also use sox, but fileformats are more limited.
+sox_str = '%s sox %s -t wav -r 16k -b 16 -e signed -c 1 - |\n'
+
+# With ffmpeg, the dataset can load any file and can convert it to 16kHz wav on-the-fly.
 sox_str = '%s ffmpeg -i "%s" -acodec pcm_s16le -ar 16000 -ac 1 -f wav - |\n'
 
 ex_file_path = 'exclusion_chars/de.txt' 
@@ -31,6 +34,7 @@ def check_exclusion(string, exclusion_dict):
     return any(exclusion_dict.get(char, False) for char in string)
 
 # Converts a vtt timestamp string to float (in seconds)
+# Detects timestamps as well that do not prefix hours
 # examples:
 # 00:59.999 -> 59.999
 # 05:36.450 -> 336.45
@@ -333,17 +337,17 @@ def process(server_api_url, api_secret_key, dev_n=10, test_n=10, test_dev_episod
     with concurrent.futures.ProcessPoolExecutor() as executor:
         podcast_futures = [executor.submit(process_podcast_wrapper, server_api_url, api_secret_key, elem['title'],
                            audio_dataset_location, replace_audio_dataset_location, change_audio_fileending) for elem in train_set]
-        try:
-            for future in concurrent.futures.as_completed(podcast_futures):
-                podcast = future.result()
-                if podcast is not None:
-                    train_podcasts.append(podcast)
-        except KeyboardInterrupt:
-            print('User abort: Cancelling remaining tasks')
-            for future in podcast_futures:
-                future.cancel()
-            concurrent.futures.wait(podcast_futures)
-            sys.exit(-1)
+        #try:
+        for future in concurrent.futures.as_completed(podcast_futures):
+            podcast = future.result()
+            if podcast is not None:
+                train_podcasts.append(podcast)
+        #except KeyboardInterrupt:
+        #    print('User abort: Cancelling remaining tasks')
+        #    for future in podcast_futures:
+        #        future.cancel()
+        #    concurrent.futures.wait(podcast_futures)
+        #    sys.exit(-1)
     #train_podcasts = []
     #for elem in train_set:
     #    try:
