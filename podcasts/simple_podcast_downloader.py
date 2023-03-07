@@ -11,8 +11,9 @@ from utils import load_config, connect_to_db
 
 # TODO: make these configurable
 language = 'de'
-rss_feed_list = 'podcast_lists/rss_feeds_de_news'
-rss_feed_list = 'podcast_lists/letscast_fm_featured_de'
+rss_feed_list = 'podcast_lists/rss_feeds_de'
+#rss_feed_list = 'podcast_lists/rss_feeds_de_news'
+#rss_feed_list = 'podcast_lists/letscast_fm_featured_de'
 
 destination_folder = f'/var/www/speechcatcher.net/cache/podcasts/{language}'
 destination_url = f'https://speechcatcher.net/cache/podcasts/{language}'
@@ -119,7 +120,7 @@ def parse_and_download(feed_url):
 
         # some feeds have episode authors, some don't
         # if available take them, if not, use the overall feed author information
-        if "authors" in episode:
+        if "authors" in episode and "name" in episode["authors"]:
             authors = ' '.join(author["name"] for author in episode["authors"])
         else:
             authors = feed_authors

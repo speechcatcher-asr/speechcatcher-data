@@ -62,21 +62,37 @@ def check_for_degenerate_vtts(vtt_dir, audio_dir='',
     
     print(f"Vocabulary: {len(vocab)} words.")
 
-
+    # Now loop over all prolematic vtts
+    # They are moved to a sandbox dir, e.g. /corrupted/ and the DB entries are changed accordingly
     if len(degen_vtts) > 0:
         corrupted_dir = "corrupted"
-        with open(possibly_corrupted_outfile, 'w'):
+        corrupted_dir_full = str(os.path.join(os.path.dirname(degen_vtts[0][0]), corrupted_dir))
+        print('creating dir',corrupted_dir_full,'if it does not exist.')
+        ensure_dir(corrupted_dir_full)
+        with open(possibly_corrupted_outfile, 'w') as outfile:
             for vtt, degen_num_lines in degen_vtts:
+                assert(vtt is not None)
+                assert(vtt != '')
+                assert(vtt.endswith(".vtt"))
+                
                 print('vtt:',vtt,'len distinct lines very small:', degen_num_lines)
-                possibly_corrupted_outfile.write(vtt + '\n')
-                new_path = os.path.join(os.path.dirname(file), corrupted_dir, os.path.basename(file))
-                print('Would move file to:', new_path)
-                # os.rename(file, new_path)
-                if p_connection is not None:
-                    print('Would execute SQL:', f"UPDATE {sql_table} SET transcript_file = %s WHERE transcript_file = %s" % (new_path, file))
-                    #p_cursor.execute(f"UPDATE {sql_table} SET transcript_file = %s WHERE transcript_file = %s", (new_path, file))
-                    #
-                    #p_connection.commit()
+                outfile.write(vtt + '\n')
+                
+                if f'/{corrupted_dir}/' in vtt:
+                    print('Warning, seems',vtt,'was already moved. Ignoring.')
+                    continue
+
+                new_path = str(os.path.join(os.path.dirname(vtt), corrupted_dir, os.path.basename(vtt)))
+                assert(new_path is not None)
+                assert(new_path != '')
+
+                if new_path != vtt:
+                    print('Move file to:', new_path)
+                    os.rename(file, new_path)
+                    if p_connection is not None:
+                        print('Execute SQL:', f"UPDATE {sql_table} SET transcript_file = %s WHERE transcript_file = %s" % (new_path, vtt))
+                        p_cursor.execute(f"UPDATE {sql_table} SET transcript_file = %s WHERE transcript_file = %s", (new_path, vtt))
+                        p_connection.commit()
 
     all_vtts_len = float(len(vtts))
     degen_vtts_len = float(len(degen_vtts))
