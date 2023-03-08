@@ -230,6 +230,13 @@ def cancel_work(wid, api_access_key):
 
     return jsonify({'success': True})
 
+# must be outside __main__ for gunicorn
+config = load_config()
+api_secret_key = config["secret_api_key"]
+vtt_dir = config["vtt_dir"]
+WSGIRequestHandler.protocol_version = 'HTTP/1.1'
+p_connection, p_cursor = connect_to_db(database=config["database"], user=config["user"], password=config["password"], host=config["host"], port=config["port"])
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Work distribution server for mass transcription jobs')
     parser.add_argument('-l', '--listen-host', default='127.0.0.1', dest='host', help='Host address to listen on.')
@@ -239,15 +246,9 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    config = load_config()
-    api_secret_key = config["secret_api_key"]
-    vtt_dir = config["vtt_dir"]
-
-    p_connection, p_cursor = connect_to_db(database=config["database"], user=config["user"], password=config["password"], host=config["host"], port=config["port"])
+    print('Warning, you are using the builtin flask server. For deployment, you should run a gunicorn server. See start_wsgi.sh')
 
     if args.debug:
         app.debug = True
 
-    WSGIRequestHandler.protocol_version = 'HTTP/1.1'
     app.run(host=args.host, port=args.port, threaded=True, use_reloader=False, use_debugger=False)
-    #,  ssl_context='adhoc')
