@@ -30,11 +30,15 @@ This creats a dataset in Kaldi format, but it will be unsorted. There are furthe
 
 The Espnet speechcatcher recipe in <todo> contains further utility scripts to refine and validate the data.
 
-The scripts are in egs2/speechcatcher/asr1. You should run the following:
+The scripts are in egs2/speechcatcher/asr1. You should run the following first:
 
     local/fix_wav.scp.py
+    mv data/train/wav.scp data/train/wav.scp.backup
+    mv data/train/new_wav.scp data/train/wav.scp
 
-This fixes issues with entries in wav.scp that are obsolete, because they don't have matching  (can happen due to filtering).
+This fixes issues with entries in wav.scp that are obsolete, because they don't have matching  (can happen due to filtering):
+
+    e.g. [Lengths are /tmp/kaldi.Jrcr/recordings=36572 versus /tmp/kaldi.Jrcr/recordings.wav=36579]
 
 Then run sort data twice per set (you need to change the set at the beginning of the file, e.g. DIR="data/dev"). The following warning messages would be normal:
 
