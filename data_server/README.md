@@ -52,7 +52,7 @@ Sort_data.sh also runs validation with the validate_data_dir.sh script - it migh
     
     utils/validate_text.pl: The line for utterance 9351fc5a7a3dddaaa101_9e497d4a36bbf3cb6a09_0000004 contains disallowed Unicode whitespaces
 
-You'd need to fix these manually. Then rerun the sort data script to verify thet the data dir validates.
+You'd need to fix these manually and the validate script should tell you what ID caused the problem. Then rerun the sort data script to verify thet the data dir validates.
 
 If you need to remove entire files or IDs, you can use the ./local/remove_id.sh script to remove them.
 
