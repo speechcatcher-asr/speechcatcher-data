@@ -58,5 +58,5 @@ If you need to remove entire files or IDs, you can use the ./local/remove_id.sh 
 
 Note, wav.scp with ffmpeg piping also support https links (if you want to make a network compatible file). You can simply replace your local path, say /var/www/ with https:// using vim:
 
-:%s#/var/www/#https://#g
+    :%s#/var/www/#https://#g
 
