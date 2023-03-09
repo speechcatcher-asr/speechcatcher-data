@@ -6,7 +6,7 @@ The data server allows to store and access transcripts. For example when mass do
 
 Create a new user and database, e.g. speechcatcher and then:
 
-sudo -u speechatcher psql -d speechcatcher < schema.psql
+   sudo -u speechatcher psql -d speechcatcher < schema.psql
 
 ## How to crawl audio data
 
