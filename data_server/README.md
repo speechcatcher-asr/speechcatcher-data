@@ -28,7 +28,7 @@ This creats a dataset in Kaldi format, but it will be unsorted. There are furthe
 
 ## Use the Espnet speechcatcher recipe
 
-The Espnet [speechcatcher recipe](https://github.com/speechcatcher-asr/espnet/tree/egs2-speechcatcher-de/egs2/speechcatcher/asr1) contains further utility scripts to refine and validate the data.
+The data can be used to train end-to-end ASR models. Punctuation isn't removed in the dataset creation and be used to train models that output them directly without a reconstruction step. Pre-trained speechcatcher models are currently trained with Espnet. The Espnet [speechcatcher recipe](https://github.com/speechcatcher-asr/espnet/tree/egs2-speechcatcher-de/egs2/speechcatcher/asr1) contains further utility scripts to refine and validate the Kaldi-formatted data.
 
 The scripts are in [egs2/speechcatcher/asr1](https://github.com/speechcatcher-asr/espnet/tree/egs2-speechcatcher-de/egs2/speechcatcher/asr1). You should run the following first:
 
