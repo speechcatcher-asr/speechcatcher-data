@@ -28,9 +28,9 @@ This creats a dataset in Kaldi format, but it will be unsorted. There are furthe
 
 ## Use the Espnet speechcatcher recipe
 
-The Espnet speechcatcher recipe in <todo> contains further utility scripts to refine and validate the data.
+The Espnet [speechcatcher recipe](https://github.com/speechcatcher-asr/espnet/tree/egs2-speechcatcher-de/egs2/speechcatcher/asr1) contains further utility scripts to refine and validate the data.
 
-The scripts are in egs2/speechcatcher/asr1. You should run the following first:
+The scripts are in [egs2/speechcatcher/asr1](https://github.com/speechcatcher-asr/espnet/tree/egs2-speechcatcher-de/egs2/speechcatcher/asr1). You should run the following first:
 
     local/fix_wav.scp.py
     mv data/train/wav.scp data/train/wav.scp.backup
