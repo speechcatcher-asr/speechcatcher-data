@@ -44,7 +44,11 @@ Then run sort data twice per set (you need to change the set at the beginning of
     mv: cannot stat 'data/dev/utt2dur': No such file or directory
     utils/validate_data_dir.sh: Successfully validated data-directory data/dev
 
-Sort_data.sh also runs validation with the validate_data_dir.sh script - it might alert you to other problems as well, like illegal unicode characters, you'd need to fix these manually. Then rerun the sort data script to verify thet the data dir validates.
+Sort_data.sh also runs validation with the validate_data_dir.sh script - it might alert you to other problems as well, like illegal unicode characters:
+    
+    utils/validate_text.pl: The line for utterance 9351fc5a7a3dddaaa101_9e497d4a36bbf3cb6a09_0000004 contains disallowed Unicode whitespaces
+
+You'd need to fix these manually. Then rerun the sort data script to verify thet the data dir validates.
 
 If you need to remove entire files or IDs, you can use the ./local/remove_id.sh script to remove them.
 
