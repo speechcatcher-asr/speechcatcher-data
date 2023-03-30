@@ -1,6 +1,16 @@
+# Speechcatcher-data
+
+Tools and scripts to mass transcribe audio data with Whisper and to generate datasets for ASR training datasets in Kaldi format.
+
 # Data server
 
 The data server allows to store and access transcripts. For example when mass downloading and transcribing podcasts in parallel, it can feed workers with new episodes. The output transcripts can then be stored in a centralized database while there may be many worker nodes on different computers that transcribe the data.
+
+## Install requirements
+
+   virtualenv -p python3.10 speechcatcher_data_env
+   source speechcatcher_data_env/bin/activate
+   pip3 install -r requirements.txt  
 
 ## How to create the Postgres schema
 
@@ -8,9 +18,67 @@ Create a new user and database, e.g. speechcatcher and then:
 
    sudo -u speechatcher psql -d speechcatcher < schema.psql
 
+## Create the speechcatcher database and user
+
+To create the speechcatcher database and user, log into postgres with:
+
+   sudo -u postgres psql
+
+and execute the following commands (you should change the password):
+
+   CREATE USER speechcatcher WITH PASSWORD 'yourpassword42';
+   CREATE DATABASE speechcatcher;
+   GRANT ALL PRIVILEGES ON DATABASE speechcatcher TO speechcatcher;
+   \q
+
+## Config.yaml
+
+You need to create a config.yaml to make a few settings, like the location of the downloaded data. Then you need to make this folder available with https:// URLs for the worker nodes too, for instance with nginx (can also be on your local network).
+
+   cp config.yaml.sample config.yaml
+   vim config.yaml #and setup your database user and pw, api key etc.
+
+## Start the data server
+
+   cd data_server
+   ./start_wsgi.sh
+
 ## How to crawl audio data
 
-Go to ../podcasts and follow the instructions there to crawl audio data.
+Go to ./podcasts and follow the instructions there to crawl audio data.
+
+There is some incomplete work on using and crawling TEDX data too, this is mainly for English. See ./tedx.
+
+## Start transcribing
+
+Once you have crawled some data, you can start transcribing it. You can also do this in parallel while downloading more data.
+
+## Setup worker node
+
+With a pytorch cloud instance for instance, you can setup a worker node quickly with: 
+
+   sudo apt-get install -y wget screen vim htop
+   pip3 install git+https://github.com/openai/whisper psycopg2-binary requests
+   git clone https://github.com/speechcatcher-asr/speechcatcher-data
+   
+Then setup config.yaml or simply copy it from your server:
+
+   vim config.yaml
+
+You can now start the worker node with:
+
+   CUDA_VISIBLE_DEVICES=0 python3 worker.py   
+
+In case you have more than one GPU, simply use the CUDA_VISIBLE_DEVICES variable to assign workers to GPUs:
+
+   CUDA_VISIBLE_DEVICES=1 python3 worker.py
+   ...
+   CUDA_VISIBLE_DEVICES=n python3 worker.py 
+
+Note that you can start with the next steps before completing transcribing all of your data and create bigger and bigger datasets as you transcribe more data. 
+Workers will randomly sample authors and then episodes from that auther. This means that you can create and export datasets early on that are diverse enough to start ASR training and scale it later.
+
+You can use the html_stats.py in podcasts to generate a html page that shows you the transcription progress w.r.t. your complete dataset.
 
 ## Sanity check
 
