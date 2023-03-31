@@ -12,12 +12,6 @@ The data server allows to store and access transcripts. For example when mass do
     source speechcatcher_data_env/bin/activate
     pip3 install -r requirements.txt  
 
-## How to create the Postgres schema
-
-Create a new user and database, e.g. speechcatcher and then:
-
-    sudo -u speechatcher psql -d speechcatcher < schema.psql
-
 ## Create the speechcatcher database and user
 
 To create the speechcatcher database and user, log into postgres with:
@@ -30,6 +24,13 @@ and execute the following commands (you should change the password):
     CREATE DATABASE speechcatcher;
     GRANT ALL PRIVILEGES ON DATABASE speechcatcher TO speechcatcher;
     \q
+
+## How to create the Postgres schema
+
+If you created a new user and database like above then:
+
+    sudo adduser speechcatcher
+    sudo -u speechcatcher psql -d speechcatcher < data_server/schema.psql
 
 ## Config.yaml
 
@@ -45,15 +46,20 @@ You need to create a config.yaml to make a few settings, like the location of th
 
 ## How to crawl audio data
 
-Go to ./podcasts and follow the instructions there to crawl audio data.
+To download podcast data you can use the simple_podcast_downloader.py script. You need to configure podcast_language, download_destination_folder and download_destination_url as well as the db connection in config.yaml.
 
-There is some incomplete work on using and crawling TEDX data too, this is mainly for English. See ./tedx.
+    cd podcasts
+    python3 simple_podcast_downloader.py your_rss_feed_list_change_me
+
+Change your_rss_feed_list_change_me to one of the lists in podcast_lists or use generate_list_from_podcastindex.py and podcastindex_feeds.db to generate a new one. You can download podcastindex_feeds.db from https://podcastindex.org/.
+
+Note that the podcast downloader script can also be resumed - when you rerun it, it checks if you've already downloaded a particular episode.
 
 ## Start transcribing
 
 Once you have crawled some data, you can start transcribing it. You can also do this in parallel while downloading more data.
 
-## Setup worker node
+## Setup worker nodes
 
 With a pytorch cloud instance for instance, you can setup a worker node quickly with: 
 
