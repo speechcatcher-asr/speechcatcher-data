@@ -49,9 +49,11 @@ You need to create a config.yaml to make a few settings, like the location of th
 To download podcast data you can use the simple_podcast_downloader.py script. You need to configure podcast_language, download_destination_folder and download_destination_url as well as the db connection in config.yaml.
 
     cd podcasts
-    python3 simple_podcast_downloader.py
+    python3 simple_podcast_downloader.py your_rss_feed_list_change_me
 
-Note that the script can also be resumed - when you rerun it, it checks if you've already downloaded a particular episode.
+Change your_rss_feed_list_change_me to one of the lists in podcast_lists or use generate_list_from_podcastindex.py and podcastindex_feeds.db to generate a new one. You can download podcastindex_feeds.db from https://podcastindex.org/.
+
+Note that the podcast downloader script can also be resumed - when you rerun it, it checks if you've already downloaded a particular episode.
 
 ## Start transcribing
 
