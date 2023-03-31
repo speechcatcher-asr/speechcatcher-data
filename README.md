@@ -12,12 +12,6 @@ The data server allows to store and access transcripts. For example when mass do
     source speechcatcher_data_env/bin/activate
     pip3 install -r requirements.txt  
 
-## How to create the Postgres schema
-
-Create a new user and database, e.g. speechcatcher and then:
-
-    sudo -u speechatcher psql -d speechcatcher < schema.psql
-
 ## Create the speechcatcher database and user
 
 To create the speechcatcher database and user, log into postgres with:
@@ -30,6 +24,12 @@ and execute the following commands (you should change the password):
     CREATE DATABASE speechcatcher;
     GRANT ALL PRIVILEGES ON DATABASE speechcatcher TO speechcatcher;
     \q
+
+## How to create the Postgres schema
+
+If you created a new user and database like above then:
+
+    sudo -u speechcatcher psql -d speechcatcher < schema.psql
 
 ## Config.yaml
 
@@ -53,7 +53,7 @@ There is some incomplete work on using and crawling TEDX data too, this is mainl
 
 Once you have crawled some data, you can start transcribing it. You can also do this in parallel while downloading more data.
 
-## Setup worker node
+## Setup worker nodes
 
 With a pytorch cloud instance for instance, you can setup a worker node quickly with: 
 
