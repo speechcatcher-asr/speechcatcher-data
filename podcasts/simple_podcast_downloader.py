@@ -7,16 +7,8 @@ import psycopg2
 import time
 import os
 import traceback
+import argparse
 from utils import load_config, connect_to_db 
-
-# TODO: make these configurable
-language = 'de'
-rss_feed_list = 'podcast_lists/rss_feeds_de'
-#rss_feed_list = 'podcast_lists/rss_feeds_de_news'
-#rss_feed_list = 'podcast_lists/letscast_fm_featured_de'
-
-destination_folder = f'/var/www/speechcatcher.net/cache/podcasts/{language}'
-destination_url = f'https://speechcatcher.net/cache/podcasts/{language}'
 
 p_connection = None
 p_cursor = None
@@ -170,13 +162,27 @@ def parse_and_download(feed_url):
     p_connection.commit()
 
 if __name__ == "__main__":
-    config = load_config()
-    ensure_dir(destination_folder)
-    p_connection, p_cursor = connect_to_db(database=config["database"], user=config["user"], password=config["password"], host=config["host"], port=config["port"])
-    
-    rss_feeds_de_list = load_feeds(rss_feed_list)
+    parser = argparse.ArgumentParser("This is a small utility to download a list of podcast episodes and puts metadata into a postgres database.")
+    parser.add_argument("rss_feed_list", help="List of RSS feeds to process (one per line)")
+    args = parser.parse_args()
 
-    for feed_url in rss_feeds_de_list:
+    rss_feed_list = args.rss_feed_list
+
+    config = load_config()
+    
+    podcast_language = config["podcast_language"]
+    language = podcast_language
+
+    destination_folder = config["download_destination_folder"].replace('{podcast_language}',podcast_language)
+    destination_url = config["download_destination_url"].replace('{podcast_language}',podcast_language)
+
+    ensure_dir(destination_folder)
+    p_connection, p_cursor = connect_to_db(database=config["database"], user=config["user"],
+            password=config["password"], host=config["host"], port=config["port"])
+   
+    rss_feeds_in_list = load_feeds(rss_feed_list)
+
+    for feed_url in rss_feeds_in_list:
         print('Downloading from:', feed_url)
         time.sleep(1)
         parse_and_download(feed_url)
