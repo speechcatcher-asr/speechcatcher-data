@@ -29,7 +29,8 @@ and execute the following commands (you should change the password):
 
 If you created a new user and database like above then:
 
-    sudo -u speechcatcher psql -d speechcatcher < schema.psql
+    sudo adduser speechcatcher
+    sudo -u speechcatcher psql -d speechcatcher < data_server/schema.psql
 
 ## Config.yaml
 
