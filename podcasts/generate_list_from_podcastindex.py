@@ -12,7 +12,7 @@ lang = 'en'
 #c.execute(f"SELECT url FROM podcasts WHERE lower(language)='{lang}'")
 
 # Select urls where the language *starts with* {lang} (e.g. "en")
-c.execute("SELECT url FROM podcasts WHERE lower(language) LIKE 'en%'")
+c.execute(f"SELECT url FROM podcasts WHERE lower(language) LIKE '{lang}%'")
 
 # Output urls to a file list in random order
 urls = [row[0] for row in c.fetchall()]
