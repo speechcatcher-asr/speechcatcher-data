@@ -8,17 +8,19 @@ c = conn.cursor()
 # Note, podcastindex_feeds.db has "en" as lang but also "en-us", "en-uk" etc.
 lang = 'en'
 
+vendor = 'castbox.fm'
+
 # Select urls where the language *is* {lang} (e.g. "en-us")
 #c.execute(f"SELECT url FROM podcasts WHERE lower(language)='{lang}'")
 
 # Select urls where the language *starts with* {lang} (e.g. "en")
-c.execute(f"SELECT url FROM podcasts WHERE lower(language) LIKE '{lang}%'")
+c.execute(f"SELECT url FROM podcasts WHERE lower(language) LIKE '{lang}%'" + (f"AND lower(url) LIKE '%{vendor}%'" if vendor != '' else '') )
 
 # Output urls to a file list in random order
 urls = [row[0] for row in c.fetchall()]
 random.shuffle(urls)
 
-with open(f'podcast_lists/{lang}_index_feeds.txt', 'w') as f:
+with open(f'podcast_lists/{lang}_{vendor}_index_feeds.txt', 'w') as f:
     for url in urls:
         f.write(url + '\n')
 
