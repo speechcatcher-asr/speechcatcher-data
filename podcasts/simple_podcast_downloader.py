@@ -64,9 +64,9 @@ def parse_and_download(feed_url):
     # gather meta data for each episode and start downloading
     for episode in d.entries:
 
-        episode_title = episode["title"]    
-        desc = episode["description"]
-        published = episode["published"]
+        episode_title = episode["title"] if "title" in episode else ''   
+        desc = episode["description"] if "description" in episode else ''
+        published = episode["published"] if "published" in episode else ''
         tags = []
         duration = -1
         link = ''
