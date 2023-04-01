@@ -8,7 +8,7 @@ c = conn.cursor()
 # Note, podcastindex_feeds.db has "en" as lang but also "en-us", "en-uk" etc.
 lang = 'en'
 
-vendor = 'castbox.fm'
+vendor = 'audioboom'
 
 # Select urls where the language *is* {lang} (e.g. "en-us")
 #c.execute(f"SELECT url FROM podcasts WHERE lower(language)='{lang}'")
