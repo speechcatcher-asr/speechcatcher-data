@@ -126,14 +126,17 @@ def transcribe_loop(server, language, secret_api_key, model='small', api_version
     return
 
 if __name__ == '__main__':
+    config = load_config()
+    default_lang = 'de'
+
+    if 'podcast_language' in config:
+        default_lang = config['podcast_language']
+
     parser = argparse.ArgumentParser(description='Worker that uses whisper to transcribe')
     parser.add_argument('-s', '--server-address', default='https://speechcatcher.net/', dest='server', help='Server address to connect to.')
     parser.add_argument('-l', '--language', default='de', dest='language', help='Language (used in the queries to the server).')
     parser.add_argument('--debug', dest='debug', help='Start with debugging enabled',
                                                     action='store_true', default=False)
-
     args = parser.parse_args()
-
-    config = load_config()
 
     transcribe_loop(args.server, args.language, config['secret_api_key'], model = config['whisper_model']) 
