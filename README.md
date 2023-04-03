@@ -4,7 +4,7 @@ Speechcatcher-data is a collection of tools and scripts to mass transcribe audio
 
 Here is an overview over the architecture:
 
-![Speechcatcher-data architecture](https://github.com/speechcatcher-asr/speechcatcher-data/raw/main/architecture.svg)
+![Speechcatcher-data architecture](https://raw.githubusercontent.com/speechcatcher-asr/speechcatcher-data/main/architecture.svg)
 
 # Data server
 
