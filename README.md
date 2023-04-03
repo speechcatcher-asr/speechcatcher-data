@@ -1,6 +1,6 @@
 # Speechcatcher-data
 
-Speechcatcher-data is a collection of tools and scripts to mass transcribe audio data with Whisper or similar big teacher models and to generate datasets for ASR training datasets in Kaldi format. With Speechcatcher-data you can easily crawl and process very large quantities of raw speech data. You can then use the generated transcriptions to export it as an ASR dataset that you use to train new (and maybe more efficient!) student models. Currently, the focus is on single language models. 
+Speechcatcher-data is a collection of tools and scripts to mass transcribe audio data with Whisper or similar big teacher models and to generate datasets for ASR training datasets in Kaldi format. With Speechcatcher-data you can easily crawl and process very large quantities of raw speech data. You can then use the generated transcriptions to export it as an ASR dataset that you use to train new (and maybe more efficient!) student models. Currently, the focus is on generating training data for single language ASR models. Processing should be language independant, you may only need to make a few changes to the unicode character filtering step. 
 
 Here is an overview over the architecture:
 
