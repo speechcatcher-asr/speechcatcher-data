@@ -2,9 +2,9 @@
 <!-- Created with Inkscape (http://www.inkscape.org/) -->
 
 <svg
-   width="193.68732mm"
-   height="133.31552mm"
-   viewBox="0 0 193.68732 133.31552"
+   width="205.2323mm"
+   height="142.49155mm"
+   viewBox="0 0 205.2323 142.49155"
    version="1.1"
    id="svg5"
    inkscape:version="1.1.2 (b8e25be8, 2022-02-05)"
@@ -24,8 +24,8 @@
      inkscape:document-units="mm"
      showgrid="false"
      inkscape:zoom="1"
-     inkscape:cx="424.5"
-     inkscape:cy="207.5"
+     inkscape:cx="442.5"
+     inkscape:cy="230.5"
      inkscape:window-width="1708"
      inkscape:window-height="957"
      inkscape:window-x="67"
@@ -57,7 +57,7 @@
      inkscape:label="Layer 1"
      inkscape:groupmode="layer"
      id="layer1"
-     transform="translate(8.7443916,-7.145985)">
+     transform="translate(13.510977,-1.1490309)">
     <rect
        style="fill:#ffffff;fill-opacity:1;stroke:#000010;stroke-width:0.373816;stroke-linejoin:round;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1;paint-order:stroke markers fill"
        id="rect49361"
@@ -189,7 +189,7 @@
          style="font-size:6.35px;stroke-width:0.264583"
          sodipodi:role="line"
          x="18.697542"
-         y="137.17267"
+         y="137.17265"
          id="tspan46784">     compatible dataset</tspan></text>
     <text
        xml:space="preserve"
@@ -453,6 +453,6 @@
        xml:space="preserve"
        transform="matrix(0.26458333,0,0,0.26458333,-8.7443916,7.145985)"
        id="text50392"
-       style="fill:black;fill-opacity:1;line-height:1.25;stroke:none;font-family:sans-serif;font-style:normal;font-weight:normal;font-size:40px;white-space:pre;shape-inside:url(#rect50394)" />
+       style="font-style:normal;font-weight:normal;font-size:40px;line-height:1.25;font-family:sans-serif;white-space:pre;shape-inside:url(#rect50394);fill:#000000;fill-opacity:1;stroke:none" />
   </g>
 </svg>
