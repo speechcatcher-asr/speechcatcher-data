@@ -8,7 +8,7 @@ from datetime import datetime
 
 from utils import load_config, connect_to_db
 
-webpage = '/var/www/speechcatcher.net/stats.html'
+webpage = '/srv/pi.speechcatcher.net/stats.html'
 podcast_table = 'podcasts'
 
 config = load_config()
