@@ -110,13 +110,14 @@ def get_work(language, api_access_key):
         return jsonify({'success':False, 'error':'api_access_key invalid'})
 
     return_dict = {'success':False, 'error':'SQL query did not execute'}
-    
+   
     # First sample an author (that still has empty transcripts)
     p_cursor.execute(f'SELECT authors,count({sql_table_ids}) from podcasts '
                      'WHERE transcript_file=%s and language=%s GROUP BY authors ORDER BY RANDOM() '
                      'LIMIT 1', ('',language) )
     record = p_cursor.fetchone()
 
+    print("language:", language)
     print("Sampled author:",record)
 
     if record is not None and len(record) > 0:
@@ -140,7 +141,7 @@ def get_work(language, api_access_key):
             return_dict = {'success':False, 'error':'No episodes without transcription for author: '+authors}
 
     else:
-        return_dict = {'success':False, 'error':'No episodes left without transcriptions.'}
+        return_dict = {'success':False, 'error':f'No episodes left without transcriptions for language {language}.'}
 
     return jsonify(return_dict)
 
