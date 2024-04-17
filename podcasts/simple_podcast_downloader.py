@@ -8,6 +8,7 @@ import time
 import os
 import traceback
 import argparse
+import subprocess
 from utils import load_config, connect_to_db 
 
 p_connection = None
@@ -51,7 +52,8 @@ def parse_and_download(feed_url):
     # If we cant find at least a podcast title, something went wrong or feed_url isnt a RSS feed
     # in this case we just print a warning and skip downloading anything
     if not 'title' in d.feed:
-        print('Skipping {feed_url=}, no title found. Maybe not a rss feed?')
+        print(d.feed)
+        print(f'Skipping {feed_url=}, no title found. Maybe not a rss feed?')
         return
 
     podcast_title = d.feed['title']
@@ -148,13 +150,18 @@ def parse_and_download(feed_url):
 
                 print('Downloading to:', cache_file)
                 print('Cache file will be available at:', cache_url)
-                wget.download(audiolink, out=cache_file, bar=wget.bar_thermometer)
+                subprocess.run(["wget","--no-check-certificate", "-O", cache_file, audiolink], check=True)
+                # If wget is not available, you could use the Python package wget:
+                # wget.download(audiolink, out=cache_file, bar=wget.bar_thermometer)
+                print('Downloaded file:', cache_file)
                 print()
 
                 sql = "INSERT INTO podcasts(podcast_title, episode_title, published_date, retrieval_time, authors, language, description, keywords, episode_url, episode_audio_url," \
                   " cache_audio_url, cache_audio_file, transcript_file, duration, type, episode_json) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)"
                 p_cursor.execute(sql, (podcast_title, episode_title, published, str(retrieval_time), authors, language, desc, joined_tags, link, audiolink, cache_url, cache_file, transcript_file, str(duration), mytype, episode_json))
                 p_connection.commit()
+
+                print("SUCCESS")
             except:
                 print('Error occured while trying to download:', audiolink)
                 traceback.print_exc()
