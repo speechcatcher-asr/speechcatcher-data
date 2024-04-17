@@ -3,6 +3,7 @@ import traceback
 import sys
 import argparse
 import whisper
+from faster_whisper import WhisperModel
 import io
 import time
 from utils import load_config
@@ -14,9 +15,12 @@ from typing import Iterator, TextIO
 # The write_vtt function was replaced in whisper, its a bit annoying
 # this is the old version, copied from a previous version of whisper
 # see https://github.com/openai/whisper/commit/da600abd2b296a5450770b872c3765d0a5a5c769
-def write_vtt(transcript: Iterator[dict], file: TextIO):
+def write_vtt(transcript: Iterator[dict], file: TextIO, fast_whisper=True):
     print("WEBVTT\n", file=file)
     for segment in transcript:
+        if fast_whisper:
+            # make faster-whisper output compatible with OG whisper
+            segment = {"start": segment.start, "end": segment.end, "text": segment.text}
         print(
             f"{format_timestamp(segment['start'])} --> {format_timestamp(segment['end'])}\n"
             f"{segment['text'].strip().replace('-->', '->')}\n",
@@ -34,10 +38,14 @@ def cancel_work(server, secret_api_key, wid, api_version='apiv1'):
 
     return
 
-def transcribe_loop(server, language, secret_api_key, model='small', api_version='apiv1'):
+def transcribe_loop(server, language, secret_api_key, model='small', api_version='apiv1', fast_whisper=True):
    
     print(f'Loading whisper model {model}')
-    model = whisper.load_model(model)
+
+    if fast_whisper:
+        model = WhisperModel(model, device="cuda", compute_type="float16")
+    else:
+        model = whisper.load_model(model)
     wip = False
     print('Done')
 
@@ -53,6 +61,20 @@ def transcribe_loop(server, language, secret_api_key, model='small', api_version
             assert(data['transcript_file'] == '')
             assert(data['cache_audio_url'] != '')
             assert(data['success'] == True)
+
+            # Title is later used as inital prompt.
+            # It has to be None, if there is no title.
+            title = None
+            if 'episode_title' in data:
+                title = data['episode_title']
+                if title == '':
+                    title = None
+
+            author = None
+            if 'authors' in data:
+                author = data['authors']
+                if author == '':
+                    author = None
 
             url = data['cache_audio_url']
             wid = data['wid']
@@ -71,20 +93,37 @@ def transcribe_loop(server, language, secret_api_key, model='small', api_version
             assert(data['success'] == True)
             wip = True
 
-            # Step 3) Use whisper to transcribe and obtain a vtt
-            print("Transcribing with whisper...")
-            #result = model.transcribe(url, language=language)
+            # Step 3) Use whisper (faster-whisper) to transcribe and obtain a vtt.
+            # Provide author and title as additional information (prompt).
+ 
+            prompt = f'Author: {author}, Title: {title}'
 
-            # there might be a bug in whisper where the default of the the command line process doesn't match the defaults of the transcribe function, the parameters below replicate the command line defaults
-            result = model.transcribe(url, language=language, task='transcribe', temperature=(0.0, 0.2, 0.4, 0.6, 0.8, 1.0), best_of=5, beam_size=5, suppress_tokens="-1", condition_on_previous_text=True, fp16=True, compression_ratio_threshold=2.4, logprob_threshold=-1., no_speech_threshold=0.6)
-            
+            if prompt[-1] == '\n':
+                prompt = prompt[:-1]
+
+            if not (prompt[-1] == '.' or prompt[-1] == '!' or prompt[-1] == '?'):
+                prompt += '.'
+
+            prompt += '\n'
+        
+            if fast_whisper:
+                print('Transcribing with fast whisper...')
+                print('Prompt:', prompt)
+                segments, info = model.transcribe(url, beam_size=5, vad_filter=True, language=language, task='transcribe', condition_on_previous_text=True, initial_prompt=prompt)
+                # OG whisper compatibility
+                result = {'segments': list(segments), 'language': info.language}
+            else:
+                # there might be a bug in whisper where the default of the the command line process doesn't match the defaults of the transcribe function, the parameters below replicate the command line defaults
+                print('Transcribing with whisper...')
+                result = model.transcribe(url, language=language, task='transcribe', temperature=(0.0, 0.2, 0.4, 0.6, 0.8, 1.0), best_of=3, beam_size=3, suppress_tokens="-1", condition_on_previous_text=True, fp16=True, compression_ratio_threshold=2.4, logprob_threshold=-1., no_speech_threshold=0.6)
+           
             print('Done!')
 
-            print('model reported language:', result["language"])
-            assert(result["language"] == language)
+            print('model reported language:', result['language'])
+            assert(result['language'] == language)
 
             fi = io.StringIO('')
-            write_vtt(result["segments"], file=fi)
+            write_vtt(result['segments'], file=fi, fast_whisper=fast_whisper)
 
             fi.seek(0)
 
