@@ -47,8 +47,8 @@ def check_for_degenerate_vtts(vtt_dir, audio_dir='',
                 input_audio = audio_dir + '/' + vtt_filename[:-4]
                 ffprobe_timestamp = get_duration(input_audio)
                 print(f'{vtt}', f'{last_timestamp=}', f'{ffprobe_timestamp=}')
-                timestamps_tsv.write(f'{vtt}\t{last_timestamp}\t{ffprobe_timestamp}\n')
-                # TODO: check for overflows
+                with open(timestamps_tsv, 'a') as timestamps_tsv_out:
+                    timestamps_tsv_out.write(f'{vtt}\t{last_timestamp}\t{ffprobe_timestamp}\n')
 
             sentences = tokenizer.tokenize_text(paras, parallel=8)
             for sentence in sentences:
@@ -87,8 +87,8 @@ def check_for_degenerate_vtts(vtt_dir, audio_dir='',
                 assert(new_path != '')
 
                 if new_path != vtt:
-                    print('Move file to:', new_path)
-                    os.rename(file, new_path)
+                    print('Move:', vtt, '->', new_path)
+                    os.rename(vtt, new_path)
                     if p_connection is not None:
                         print('Execute SQL:', f"UPDATE {sql_table} SET transcript_file = %s WHERE transcript_file = %s" % (new_path, vtt))
                         p_cursor.execute(f"UPDATE {sql_table} SET transcript_file = %s WHERE transcript_file = %s", (new_path, vtt))
