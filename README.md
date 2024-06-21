@@ -135,7 +135,7 @@ You'd need to fix these manually and the validate script should tell you what ID
 
 If you need to remove entire files or IDs, you can use the ./local/remove_id.sh script to remove them.
 
-Note, wav.scp with ffmpeg piping also support https links (if you want to make a network compatible file). You can simply replace your local path, say /var/www/ with https:// using vim:
+Note, wav.scp with ffmpeg piping also supports HTTP/HTTPS links (if you want to make a network compatible file and keep the dataset on a remote server). You can simply replace your local path, say /var/www/ with https:// using vim:
 
     :%s#/var/www/#https://#g
 
