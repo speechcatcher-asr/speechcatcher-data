@@ -115,7 +115,7 @@ The scripts are in [egs2/speechcatcher/asr1](https://github.com/speechcatcher-as
     mv data/train/wav.scp data/train/wav.scp.backup
     mv data/train/new_wav.scp data/train/wav.scp
 
-This fixes issues with entries in wav.scp that are obsolete, because they don't have matching  (can happen due to filtering):
+This fixes issues with entries in wav.scp that are obsolete, because they don't have matching utterance ids (can happen due to filtering):
 
     e.g. [Lengths are /tmp/kaldi.Jrcr/recordings=36572 versus /tmp/kaldi.Jrcr/recordings.wav=36579]
 
