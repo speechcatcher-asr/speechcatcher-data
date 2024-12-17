@@ -2,6 +2,7 @@ import yaml
 import psycopg2
 import traceback
 import os
+import sys
 import subprocess
 
 # inspired by https://stackoverflow.com/questions/31024968/using-ffmpeg-to-obtain-video-durations-in-python
