@@ -10,6 +10,7 @@ import re
 import traceback
 import concurrent.futures
 import sys
+import os
 from utils import *
 
 # You can also use sox, but fileformats are more limited.
@@ -32,6 +33,20 @@ exclusion_dict = create_exclusion_dict(ex_file_path)
 
 def check_exclusion(string, exclusion_dict):
     return any(exclusion_dict.get(char, False) for char in string)
+
+
+class InvalidURLException(Exception):
+    """Exception raised for invalid URL or file path."""
+    def __init__(self, url, message="The URL or file path is invalid"):
+        self.url = url
+        self.message = message
+        super().__init__(self.message)
+
+def read_local_file(file_path):
+    if not os.path.exists(file_path):
+        raise FileNotFoundError(f"No file found at {file_path}")
+    with open(file_path, 'r') as file:
+        return file.read()
 
 # Converts a vtt timestamp string to float (in seconds)
 # Detects timestamps as well that do not prefix hours
@@ -248,7 +263,15 @@ def process_podcast(server_api_url, api_secret_key, title, audio_dataset_locatio
                 print('Warning, ignoring empty episode url.')
                 continue
 
-            vtt_content = download_vtt_file(episode['transcript_file_url'])
+            vtt_content = None
+            url = episode['transcript_file_url']
+
+            if url.startswith('http'):
+                vtt_content = download_vtt_file(url)
+            elif url.startswith('/'):
+                vtt_content = read_local_file(url)
+            else:
+                raise InvalidURLException(url)
 
             # If replace_audio_dataset_location isn't empty, change the server reported (absolute) filenames.
             # This is useful if you store the dataset on different servers in different directories, e.g.
@@ -278,21 +301,24 @@ def process_podcast(server_api_url, api_secret_key, title, audio_dataset_locatio
     return {'title': title, 'episodes': episodes}
 
 # Divide dataset into train/dev/test and start processing the podcasts
-def process(server_api_url, api_secret_key, dev_n=10, test_n=10, test_dev_episodes_threshold=10,
+def process(server_api_url, api_secret_key, dev_n=10, test_n=10, test_dev_episodes_threshold=10, language='en',
                                      audio_dataset_location='', replace_audio_dataset_location='', change_audio_fileending=''):
     
-    request_url = f"{server_api_url}/get_podcast_list/de/{api_secret_key}"
+    request_url = f"{server_api_url}/get_podcast_list/{language}/{api_secret_key}"
     response = requests.get(request_url)
     podcast_list = response.json()
 
-    #print(podcast_list)
+    print('Number of podcasts:', len(podcast_list))
+    print('Dev_n:', dev_n)
+    print('Test_n:', test_n)
+    print('test_dev_episodes_threshold:', test_dev_episodes_threshold)
 
     podcast_list_test_dev_pool = [podcast for podcast in podcast_list if (podcast['count'] < test_dev_episodes_threshold)]
 
-    dev_set = random.sample(podcast_list_test_dev_pool, 10)
+    dev_set = random.sample(podcast_list_test_dev_pool, dev_n)
     podcast_list_test_dev_pool = [x for x in podcast_list_test_dev_pool if x not in dev_set]
 
-    test_set = random.sample(podcast_list_test_dev_pool, 10)
+    test_set = random.sample(podcast_list_test_dev_pool, test_n)
 
     train_set = [x for x in podcast_list if (x not in dev_set) and (x not in test_set)]
 
@@ -378,4 +404,5 @@ if __name__ == '__main__':
     audio_dataset_location = config["audio_dataset_location"]
     replace_audio_dataset_location = config["replace_audio_dataset_location"]
     change_audio_fileending = config["change_audio_fileending_to"]
-    process(server_api_url, api_secret_key, args.dev_n, args.test_n, args.test_dev_episodes_threshold, audio_dataset_location, replace_audio_dataset_location, change_audio_fileending)
+    language = config["podcast_language"]
+    process(server_api_url, api_secret_key, args.dev_n, args.test_n, args.test_dev_episodes_threshold, language, audio_dataset_location, replace_audio_dataset_location, change_audio_fileending)
