@@ -1,28 +1,42 @@
+import argparse
 import sqlite3
 import random
 
-# The file "podcastindex_feeds.db" can be obtained from https://podcastindex.org/
-conn = sqlite3.connect('podcastindex_feeds.db')
-c = conn.cursor()
+def main(database, language, vendor, output_dir):
+    # Connect to the database
+    conn = sqlite3.connect(database)
+    c = conn.cursor()
 
-# Note, podcastindex_feeds.db has "en" as lang but also "en-us", "en-uk" etc.
-lang = 'en'
+    # Query for urls where the language starts with the specified language
+    query = f"SELECT url FROM podcasts WHERE lower(language) LIKE '{language}%'"
+    if vendor and not (vendor=='*' OR vendor=='all'):
+        query += f" AND lower(url) LIKE '%{vendor}%'"
+    c.execute(query)
 
-vendor = 'audioboom'
+    # Shuffle and write urls to a file
+    urls = [row[0] for row in c.fetchall()]
+    random.shuffle(urls)
 
-# Select urls where the language *is* {lang} (e.g. "en-us")
-#c.execute(f"SELECT url FROM podcasts WHERE lower(language)='{lang}'")
+    with open(f'{output_dir}/{language}_{vendor}_index_feeds.txt', 'w') as f:
+        for url in urls:
+            f.write(url + '\n')
 
-# Select urls where the language *starts with* {lang} (e.g. "en")
-c.execute(f"SELECT url FROM podcasts WHERE lower(language) LIKE '{lang}%'" + (f"AND lower(url) LIKE '%{vendor}%'" if vendor != '' else '') )
+    # Close the database connection
+    conn.close()
 
-# Output urls to a file list in random order
-urls = [row[0] for row in c.fetchall()]
-random.shuffle(urls)
+if __name__ == "__main__":
+    # Setting up argparse to handle command line arguments
+    parser = argparse.ArgumentParser(description="Fetch podcast URLs from the database.")
+    parser.add_argument("--database", type=str, default="podcastindex_feeds.db",
+                        help="Database file to connect to. Default is 'podcastindex_feeds.db'.")
+    parser.add_argument("--language", type=str, default="en",
+                        help="Language prefix to filter URLs. Default is 'en'.")
+    parser.add_argument("--vendor", type=str, default="audioboom",
+                        help="Vendor filter for URLs. Default is 'audioboom'.")
+    parser.add_argument("--output_dir", type=str, default="podcast_lists",
+                        help="Directory to save the output files. Default is 'podcast_lists'.")
 
-with open(f'podcast_lists/{lang}_{vendor}_index_feeds.txt', 'w') as f:
-    for url in urls:
-        f.write(url + '\n')
+    args = parser.parse_args()
 
-        # Close the database connection
-        conn.close()
+    # Run main function with parsed arguments
+    main(args.database, args.language, args.vendor, args.output_dir)
