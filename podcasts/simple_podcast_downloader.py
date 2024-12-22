@@ -73,6 +73,7 @@ def parse_and_download(feed_url):
         duration = -1
         link = ''
         audiolink = ''
+        mytype = ''
 
         # find the audio link in the links section
         for elem in episode["links"]:
