@@ -81,6 +81,9 @@ def parse_and_download(feed_url):
                 mytype = elem["type"]
                 audiolink = elem["href"]
             elif elem["type"].startswith("text/html"):
+                if not 'href' in elem:
+                    print('No href in elem, ignoring episode.', elem)
+                    continue
                 link = elem["href"]
 
         # remove tracking link that makes downloading impossible
@@ -138,7 +141,7 @@ def parse_and_download(feed_url):
                 audiolink_split = audiolink.split('?')
                 assert(len(audiolink_split) <= 2)
                 
-                audio_filename = audiolink_split[0].split('/')[-1]
+                audio_filename = audiolink_split[0].split('/')[-1].replace('%','_')
                 assert(len(audio_filename) > 0)
 
                 # insert unixtime to guarantee that the link is unique
