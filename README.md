@@ -67,8 +67,8 @@ Once you have crawled some data, you can start transcribing it. You can also do 
 
 With a pytorch cloud instance for instance, you can setup a worker node quickly with: 
 
-    sudo apt-get install -y wget screen vim htop
-    pip3 install git+https://github.com/openai/whisper psycopg2-binary requests
+    sudo apt-get install -y wget screen vim htop python3.12-venv
+    pip3 install git+https://github.com/openai/whisper psycopg2-binary requests faster-whisper
     git clone https://github.com/speechcatcher-asr/speechcatcher-data
    
 Then setup config.yaml or simply copy it from your server:
