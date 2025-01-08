@@ -9,7 +9,7 @@ def main(database, language, vendor, output_dir):
 
     # Query for urls where the language starts with the specified language
     query = f"SELECT url FROM podcasts WHERE lower(language) LIKE '{language}%'"
-    if vendor and not (vendor=='*' OR vendor=='all'):
+    if vendor and not (vendor=='*' or vendor=='all'):
         query += f" AND lower(url) LIKE '%{vendor}%'"
     c.execute(query)
 
@@ -31,8 +31,8 @@ if __name__ == "__main__":
                         help="Database file to connect to. Default is 'podcastindex_feeds.db'.")
     parser.add_argument("--language", type=str, default="en",
                         help="Language prefix to filter URLs. Default is 'en'.")
-    parser.add_argument("--vendor", type=str, default="audioboom",
-                        help="Vendor filter for URLs. Default is 'audioboom'.")
+    parser.add_argument("--vendor", type=str, default="all",
+                        help="Vendor filter for URLs. Default is 'all'.")
     parser.add_argument("--output_dir", type=str, default="podcast_lists",
                         help="Directory to save the output files. Default is 'podcast_lists'.")
 
