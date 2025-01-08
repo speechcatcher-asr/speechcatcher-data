@@ -3,7 +3,7 @@ import traceback
 import sys
 import argparse
 import whisper
-from faster_whisper import WhisperModel
+from faster_whisper import WhisperModel, BatchedInferencePipeline
 import io
 import time
 from utils import load_config
@@ -44,6 +44,7 @@ def transcribe_loop(server, language, secret_api_key, model='small', api_version
 
     if fast_whisper:
         model = WhisperModel(model, device="cuda", compute_type="float16")
+        batched_model = BatchedInferencePipeline(model=model)
     else:
         model = whisper.load_model(model)
     wip = False
@@ -112,7 +113,7 @@ def transcribe_loop(server, language, secret_api_key, model='small', api_version
             if fast_whisper:
                 print('Transcribing with fast whisper...')
                 print('Prompt:', prompt)
-                segments, info = model.transcribe(url, vad_filter=True, language=language, task='transcribe', temperature=(0.0, 0.2, 0.4, 0.6, 0.8, 1.0), best_of=bs, beam_size=bs, condition_on_previous_text=True, initial_prompt=prompt)
+                segments, info = batched_model.transcribe(url, vad_filter=True, language=language, task='transcribe', temperature=(0.0, 0.2, 0.4, 0.6, 0.8, 1.0), best_of=bs, beam_size=bs, condition_on_previous_text=True, initial_prompt=prompt, batch_size=8)
                 # OG whisper compatibility
                 result = {'segments': list(segments), 'language': info.language}
             else:
@@ -150,18 +151,6 @@ def transcribe_loop(server, language, secret_api_key, model='small', api_version
             vtt_str = fi.read()
             fi.close()
 
-            # Step 4) Upload vtt and close the memory StringIO file
-            files = {'file': fi}
-            upload_url = f'{server}/{api_version}/upload_result/{wid}/{secret_api_key}'
-            print(f"{upload_url=}")
-
-            resp = requests.post(upload_url, files=files)
-            data = resp.json()
-            assert(data['success'] == True)
-            wip = False
-            vtt_str = fi.read()
-            fi.close()
-            
             # Cleanup, just making sure data doesnt get mixed up in the next iteration
             del fi
             del result
