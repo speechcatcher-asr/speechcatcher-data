@@ -127,6 +127,7 @@ def parse_and_download(feed_url):
         cache_url = ''
         cache_file = ''
         transcript_file = ''
+        model_name = ''
 
         # Use default=str for delta timedelta objects (parsed dates), since the json.dumps function can't handle them otherwise
         episode_json = json.dumps(episode, default=str) 
@@ -161,8 +162,8 @@ def parse_and_download(feed_url):
                 print()
 
                 sql = "INSERT INTO podcasts(podcast_title, episode_title, published_date, retrieval_time, authors, language, description, keywords, episode_url, episode_audio_url," \
-                  " cache_audio_url, cache_audio_file, transcript_file, duration, type, episode_json) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)"
-                p_cursor.execute(sql, (podcast_title, episode_title, published, str(retrieval_time), authors, language, desc, joined_tags, link, audiolink, cache_url, cache_file, transcript_file, str(duration), mytype, episode_json))
+                  " cache_audio_url, cache_audio_file, transcript_file, duration, type, episode_json, model) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)"
+                p_cursor.execute(sql, (podcast_title, episode_title, published, str(retrieval_time), authors, language, desc, joined_tags, link, audiolink, cache_url, cache_file, transcript_file, str(duration), mytype, episode_json, model_name))
                 p_connection.commit()
 
                 print("SUCCESS")
