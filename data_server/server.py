@@ -174,13 +174,16 @@ def upload_result(wid, api_access_key):
     if api_secret_key != api_access_key:
         return jsonify({'success': False, 'error':'api_access_key invalid'})
 
+    # result upload needs a file
     if 'file' not in request.files:
         return jsonify({'success': False, 'error':'no file found in POST request'})
 
     p_cursor.execute(f'SELECT {sql_table_ids}, transcript_file, cache_audio_file, episode_audio_url FROM {sql_table} WHERE {sql_table_ids}=%s', (str(wid),))
     record = p_cursor.fetchone()
-
     table_id, transcript_file, cache_audio_file, episode_audio_url = record
+
+    # Check if model parameter is present
+    model_name = request.form.get('model', None)
 
     if transcript_file != 'in_progress':
         return jsonify({'success': False, 'error': str(wid)+' not in progress'})
@@ -203,7 +206,14 @@ def upload_result(wid, api_access_key):
         print('Saving vtt file to:', full_filename)
         myfile.save(full_filename)
 
-        p_cursor.execute(f'UPDATE {sql_table} SET transcript_file=%s WHERE {sql_table_ids}=%s', (full_filename, str(wid)))
+        # Update the transcript_file and model columns
+        if model_name:
+            p_cursor.execute(f'UPDATE {sql_table} SET transcript_file=%s, model=%s WHERE {sql_table_ids}=%s',
+                             (full_filename, model_name, str(wid)))
+        else:
+            p_cursor.execute(f'UPDATE {sql_table} SET transcript_file=%s WHERE {sql_table_ids}=%s',
+                             (full_filename, str(wid)))
+
         p_connection.commit()
     else:
         return jsonify({'success': False, 'error': str(wid)+' could not access upload file'})

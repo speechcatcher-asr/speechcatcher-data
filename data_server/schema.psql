@@ -1,6 +1,26 @@
-CREATE TABLE IF NOT EXISTS podcasts (podcast_episode_id serial PRIMARY KEY, podcast_title TEXT, episode_title TEXT, published_date TEXT, retrieval_time DECIMAL, authors TEXT, language VARCHAR(16), description TEXT, keywords TEXT, episode_url TEXT, episode_audio_url TEXT, cache_audio_url TEXT, cache_audio_file TEXT, transcript_file TEXT, duration REAL, type VARCHAR(64), episode_json JSON);
+CREATE TABLE IF NOT EXISTS podcasts (
+    podcast_episode_id serial PRIMARY KEY,
+    podcast_title TEXT,
+    episode_title TEXT,
+    published_date TEXT,
+    retrieval_time DECIMAL,
+    authors TEXT,
+    language VARCHAR(16),
+    description TEXT,
+    keywords TEXT,
+    episode_url TEXT,
+    episode_audio_url TEXT,
+    cache_audio_url TEXT,
+    cache_audio_file TEXT,
+    transcript_file TEXT,
+    duration REAL,
+    type VARCHAR(64),
+    episode_json JSON,
+    model VARCHAR(64)
+);
 
-CREATE INDEX IF NOT EXISTS podcast_title_index on podcasts (podcast_title);
-CREATE INDEX IF NOT EXISTS episode_url_index on podcasts (episode_url);
-CREATE INDEX IF NOT EXISTS cache_audio_url_index on podcasts (cache_audio_url);
-CREATE INDEX IF NOT EXISTS cache_audio_file_index on podcasts (cache_audio_file);
+CREATE INDEX IF NOT EXISTS podcast_title_index ON podcasts (podcast_title);
+CREATE INDEX IF NOT EXISTS episode_url_index ON podcasts (episode_url);
+CREATE INDEX IF NOT EXISTS cache_audio_url_index ON podcasts (cache_audio_url);
+CREATE INDEX IF NOT EXISTS cache_audio_file_index ON podcasts (cache_audio_file);
+CREATE INDEX IF NOT EXISTS model_index ON podcasts (model);
