@@ -55,7 +55,9 @@ To download podcast data you can use the simple_podcast_downloader.py script. Yo
     cd podcasts
     python3 simple_podcast_downloader.py your_rss_feed_list_change_me
 
-Change your_rss_feed_list_change_me to one of the lists in podcast_lists or use generate_list_from_podcastindex.py and podcastindex_feeds.db to generate a new one. You can download podcastindex_feeds.db from https://podcastindex.org/.
+Change your_rss_feed_list_change_me to one of the lists in podcast_lists or use generate_list_from_podcastindex.py and podcastindex_feeds.db to generate a new one. You can download podcastindex_feeds.db from https://podcastindex.org/:
+
+    wget https://public.podcastindex.org/podcastindex_feeds.db.tgz
 
 Note that the podcast downloader script can also be resumed - when you rerun it, it checks if you've already downloaded a particular episode.
 
