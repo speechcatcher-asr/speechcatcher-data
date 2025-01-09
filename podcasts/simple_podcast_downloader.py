@@ -110,8 +110,15 @@ def parse_and_download(feed_url):
                     duration = int(dur_split[0])*3600 + int(dur_split[1])*60 + int(dur_split[2])
                 elif len(dur_split) == 2: # mm:ss
                     duration = int(dur_split[0])*60 + int(dur_split[1])
+            elif '.' in duration:
+                duration = float(duration)
             else:
-                duration = int(duration)
+                duration = -1
+                try:
+                    duration = int(duration)
+                except:
+                    print('Warning, could not parse duration, skipping...')
+                    continue
         else:
             print('Warning: no itunes_duration in episode')
         print(episode) 
