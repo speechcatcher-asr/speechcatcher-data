@@ -3,7 +3,7 @@ import traceback
 import sys
 import argparse
 import whisper
-from faster_whisper import WhisperModel
+from faster_whisper import WhisperModel, BatchedInferencePipeline
 import io
 import time
 from utils import load_config
@@ -44,6 +44,7 @@ def transcribe_loop(server, language, secret_api_key, model='small', api_version
 
     if fast_whisper:
         model = WhisperModel(model, device="cuda", compute_type="float16")
+        batched_model = BatchedInferencePipeline(model=model)
     else:
         model = whisper.load_model(model)
     wip = False
@@ -105,17 +106,20 @@ def transcribe_loop(server, language, secret_api_key, model='small', api_version
                 prompt += '.'
 
             prompt += '\n'
-        
+
+            model_beam_size = 3
+            bs = model_beam_size
+
             if fast_whisper:
                 print('Transcribing with fast whisper...')
                 print('Prompt:', prompt)
-                segments, info = model.transcribe(url, beam_size=5, vad_filter=True, language=language, task='transcribe', condition_on_previous_text=True, initial_prompt=prompt)
+                segments, info = batched_model.transcribe(url, vad_filter=True, language=language, task='transcribe', temperature=(0.0, 0.2, 0.4, 0.6, 0.8, 1.0), best_of=bs, beam_size=bs, condition_on_previous_text=True, initial_prompt=prompt, batch_size=8)
                 # OG whisper compatibility
                 result = {'segments': list(segments), 'language': info.language}
             else:
                 # there might be a bug in whisper where the default of the the command line process doesn't match the defaults of the transcribe function, the parameters below replicate the command line defaults
                 print('Transcribing with whisper...')
-                result = model.transcribe(url, language=language, task='transcribe', temperature=(0.0, 0.2, 0.4, 0.6, 0.8, 1.0), best_of=3, beam_size=3, suppress_tokens="-1", condition_on_previous_text=True, fp16=True, compression_ratio_threshold=2.4, logprob_threshold=-1., no_speech_threshold=0.6)
+                result = model.transcribe(url, language=language, task='transcribe', temperature=(0.0, 0.2, 0.4, 0.6, 0.8, 1.0), best_of=bs, beam_size=bs, suppress_tokens="-1", condition_on_previous_text=True, fp16=True, compression_ratio_threshold=2.4, logprob_threshold=-1., no_speech_threshold=0.6)
            
             print('Done!')
 
@@ -129,16 +133,24 @@ def transcribe_loop(server, language, secret_api_key, model='small', api_version
 
             # Step 4) Upload vtt and close the memory StringIO file
             files = {'file': fi}
+
+            # Add the model name as part of the request payload
+            data = {'model': f'fwhisper_fp16_bs{bs}' if fast_whisper else f'whisper_fp16_bs{bs}'}
+
             upload_url = f'{server}/{api_version}/upload_result/{wid}/{secret_api_key}'
             print(f"{upload_url=}")
 
-            resp = requests.post(upload_url, files=files)
+            # Include 'data' with the POST request
+            resp = requests.post(upload_url, files=files, data=data)
+
+            # Parse and check the response
             data = resp.json()
             assert(data['success'] == True)
+
             wip = False
             vtt_str = fi.read()
             fi.close()
-            
+
             # Cleanup, just making sure data doesnt get mixed up in the next iteration
             del fi
             del result
