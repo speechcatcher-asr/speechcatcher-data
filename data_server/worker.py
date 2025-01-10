@@ -113,7 +113,7 @@ def transcribe_loop(server, language, secret_api_key, model='small', api_version
             if fast_whisper:
                 print('Transcribing with fast whisper...')
                 print('Prompt:', prompt)
-                segments, info = batched_model.transcribe(url, vad_filter=True, language=language, task='transcribe', temperature=(0.0, 0.2, 0.4, 0.6, 0.8, 1.0), best_of=bs, beam_size=bs, condition_on_previous_text=True, initial_prompt=prompt, batch_size=8)
+                segments, info = batched_model.transcribe(url, vad_filter=False, language=language, task='transcribe', temperature=(0.0, 0.2, 0.4, 0.6, 0.8, 1.0), best_of=bs, beam_size=bs, condition_on_previous_text=True, initial_prompt=prompt, batch_size=8)
                 # OG whisper compatibility
                 result = {'segments': list(segments), 'language': info.language}
             else:
