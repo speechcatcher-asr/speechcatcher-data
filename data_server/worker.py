@@ -113,11 +113,13 @@ def transcribe_loop(server, language, secret_api_key, model='small', api_version
             if fast_whisper:
                 print('Transcribing with fast whisper...')
                 print('Prompt:', prompt)
-                segments, info = batched_model.transcribe(url, vad_filter=False, language=language, task='transcribe', temperature=(0.0, 0.2, 0.4, 0.6, 0.8, 1.0), best_of=bs, beam_size=bs, condition_on_previous_text=True, initial_prompt=prompt, batch_size=8)
+                # If vad filter=False, we get: No clip timestamps found. Set 'vad_filter' to True or provide 'clip_timestamps'.
+                # Looks like condition on previous text is also ignored
+                segments, info = batched_model.transcribe(url, vad_filter=True, language=language, task='transcribe', temperature=(0.0, 0.2, 0.4, 0.6, 0.8, 1.0), best_of=bs, beam_size=bs, condition_on_previous_text=True, initial_prompt=prompt, batch_size=8)
                 # OG whisper compatibility
                 result = {'segments': list(segments), 'language': info.language}
             else:
-                # there might be a bug in whisper where the default of the the command line process doesn't match the defaults of the transcribe function, the parameters below replicate the command line defaults
+                # There might be a bug in whisper where the default of the the command line process doesn't match the defaults of the transcribe function, the parameters below replicate the command line defaults
                 print('Transcribing with whisper...')
                 result = model.transcribe(url, language=language, task='transcribe', temperature=(0.0, 0.2, 0.4, 0.6, 0.8, 1.0), best_of=bs, beam_size=bs, suppress_tokens="-1", condition_on_previous_text=True, fp16=True, compression_ratio_threshold=2.4, logprob_threshold=-1., no_speech_threshold=0.6)
            
