@@ -2,6 +2,8 @@ import requests
 import traceback
 import sys
 import argparse
+import torch
+import numpy as np
 import whisper
 from faster_whisper import WhisperModel, BatchedInferencePipeline
 import io
@@ -189,7 +191,119 @@ def transcribe_loop(server, language, secret_api_key, model='small', api_version
 
     return
 
+def upload_results_batch(server, api_version, secret_api_key, wids, results):
+    """Uploads transcription results for a batch of work items."""
+    upload_url = f"{server}/{api_version}/upload_result_batch/{secret_api_key}"
+    files = []
+    data = []
 
+    # Preparing the multipart/form-data with files and data
+    for wid, result in zip(wids, results):
+        # Creating a virtual file object containing the result (assuming result is VTT text)
+        file_object = io.StringIO(result)
+        # Each file needs a unique key in the 'files' dict for the multipart upload.
+        # ('file', (filename, fileobject, content_type))
+        files.append(('file', (f"{wid}.vtt", file_object.getvalue(), 'text/vtt')))
+        # Including the model name or any additional data as part of the form data
+        data.append(('model', f'whisper_{wid}'))
+
+    # POST request with files and data
+    response = requests.post(upload_url, files=files, data=data)
+    # Closing all StringIO objects
+    for _, file_tuple in files:
+        file_tuple[1].close()
+
+    return response.json()
+
+def register_wip_batch(server, api_version, secret_api_key, wids):
+    """
+    Registers a batch of work items as in progress by sending a POST request to the server.
+    
+    :param server: URL of the server where the API is hosted.
+    :param api_version: API version to access the correct endpoint.
+    :param secret_api_key: Secret key for API access.
+    :param wids: List of work item IDs (wids) that are to be registered.
+    :return: JSON response from the server indicating success or failure.
+    """
+    url = f"{server}/{api_version}/register_wip_batch/{secret_api_key}"
+    payload = {'wids': wids}  # Payload containing the list of work IDs
+    response = requests.post(url, json=payload)  # Sending a POST request with the payload as JSON
+
+    if response.status_code == 200:
+        return response.json()  # Return the JSON response if request was successful
+    else:
+        # In case of a non-200 response, log and return an error message
+        print(f"Failed to register work in progress. Status Code: {response.status_code}, Response: {response.text}")
+        return {'success': False, 'error': 'Failed to register work in progress with the server.'}
+
+
+def transcribe_loop_batch(server, language, secret_api_key, model='small', api_version='apiv1', batch_size=5):
+    from transformers import AutoProcessor, WhisperForConditionalGeneration
+    from datasets import load_dataset, Audio
+
+    print(f"Loading Whisper model {model}")
+    processor = AutoProcessor.from_pretrained(f"openai/whisper-{model}.en")
+    whisper_model = WhisperForConditionalGeneration.from_pretrained(f"openai/whisper-{model}.en", torch_dtype=torch.float16)
+    whisper_model.to("cuda")
+
+    get_work_url = f'{server}/{api_version}/get_work_batch/{language}/{secret_api_key}/{batch_size}'
+    print(f'URL for getting work: {get_work_url}')
+
+    while True:
+        wip = False
+        try:
+            # Step 1: Get a batch of work to transcribe
+            resp = requests.get(url=get_work_url)
+            work_batch = resp.json()
+
+            if not work_batch['success']:
+                print("Failed to fetch work batch:", work_batch)
+                continue
+
+            urls = [task['episode_audio_url'] for task in work_batch['tasks']]
+            wids = [task['wid'] for task in work_batch['tasks']]
+            wip = True
+
+            print('Fetched new batch of jobs:', wids)
+
+            # Step 2: Register work in progress for the fetched batch
+            register_response = register_wip_batch(wids)
+            if not register_response['success']:
+                print("Failed to register work in progress:", register_response)
+                continue
+
+            print('Batch registered:', register_response)
+
+            # Transcription
+            ds = load_dataset("text", data_files=urls)["train"]
+            ds = ds.cast_column("audio", Audio(sampling_rate=16000))
+
+            raw_audio = [x["array"].astype(np.float32) for x in ds["audio"]]
+            inputs = processor(raw_audio, return_tensors="pt", padding="longest", return_attention_mask=True, sampling_rate=16000)
+            inputs = inputs.to("cuda", torch.float16)
+
+            # Transcribe
+            results = whisper_model.generate(**inputs, condition_on_prev_tokens=True, temperature=(0.0, 0.2, 0.4, 0.6, 0.8, 1.0), return_timestamps=True)
+            decoded_results = processor.batch_decode(results, skip_special_tokens=True)
+
+            # Step 4: Upload results
+            upload_results_batch(server, api_version, secret_api_key, wids, decoded_results)
+            wip = False
+
+        except KeyboardInterrupt:
+            print("Keyboard interrupt")
+            if wip:
+                print('Canceled with work in progress:', wids)
+                cancel_work_batch(server, secret_api_key, wids, api_version)
+            sys.exit(-10)
+
+        except Exception as e:
+            print("Exception encountered in transcribe_loop_batch:", e)
+            traceback.print_exc()
+            if wip:
+                print('Canceled with work in progress:', wids)
+                cancel_work_batch(server, secret_api_key, wids, api_version)
+            time.sleep(30)
 
 
 if __name__ == '__main__':
