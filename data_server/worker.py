@@ -29,6 +29,7 @@ def write_vtt(transcript: Iterator[dict], file: TextIO, fast_whisper=True):
         )
 
 def cancel_work(server, secret_api_key, wid, api_version='apiv1'):
+    """ Cancels the work in progress for one task on the server. """
     print(f'Trying to cancel {wid}...')
     cancel_work = f'{server}/{api_version}/cancel_work/{wid}/{secret_api_key}'
 
@@ -38,8 +39,18 @@ def cancel_work(server, secret_api_key, wid, api_version='apiv1'):
 
     return
 
+def cancel_work_batch(server, api_secret_key, wids, api_version='apiv1'):
+    """ Cancels the work in progress for a batch of tasks on the server. """
+    print(f'Trying to cancel {wid}...')
+    cancel_url = f'{server}/{api_version}/cancel_work_batch/{api_secret_key}'
+    
+    resp = requests.post(cancel_url, json={'wids': wids})
+    data = resp.json()
+    print('Cancelled work in progress:', data)
+
+    return data
+
 def transcribe_loop(server, language, secret_api_key, model='small', api_version='apiv1', fast_whisper=True):
-   
     print(f'Loading whisper model {model}')
 
     if fast_whisper:
@@ -47,12 +58,12 @@ def transcribe_loop(server, language, secret_api_key, model='small', api_version
         batched_model = BatchedInferencePipeline(model=model)
     else:
         model = whisper.load_model(model)
-    wip = False
     print('Done')
 
     get_work_url = f'{server}/{api_version}/get_work/{language}/{secret_api_key}'
     print(f'{get_work_url=}')
     while True:
+        wip = False
         try:
             # Step 1) Get a url to transcribe from the transcription server
 
@@ -177,6 +188,9 @@ def transcribe_loop(server, language, secret_api_key, model='small', api_version
             time.sleep(30)
 
     return
+
+
+
 
 if __name__ == '__main__':
     config = load_config()
