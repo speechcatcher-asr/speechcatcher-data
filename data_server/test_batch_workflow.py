@@ -1,8 +1,8 @@
 import requests
 
 # Configuration
-api_base_url = "http://192.168.0.5:4280/apiv1/"  # Replace 'api_version' with your actual API version
-api_access_key = "myspeech4269"  # Replace with your actual API secret key
+api_base_url = "http://192.168.0.5:4280/apiv1/"  # Replace with your actual base url
+api_access_key = "password4269"  # Replace with your actual API secret key
 
 def get_work_batch(language, n):
     url = f"{api_base_url}/get_work_batch/{language}/{api_access_key}/{n}"
