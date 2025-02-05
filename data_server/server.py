@@ -146,6 +146,43 @@ def get_work(language, api_access_key):
 
     return jsonify(return_dict)
 
+@app.route(api_version + '/get_work_batch/<language>/<api_access_key>/<int:n>', methods=['GET'])
+def get_work_batch(language, api_access_key, n):
+    if api_secret_key != api_access_key:
+        return jsonify({'success': False, 'error': 'api_access_key invalid'})
+
+    # Fetch up to n tasks with similar durations
+    p_cursor.execute(f"""
+        SELECT {sql_table_ids}, episode_title, authors, language, episode_audio_url, cache_audio_url, cache_audio_file, transcript_file, duration
+        FROM {sql_table}
+        WHERE transcript_file=%s and language=%s
+        ORDER BY duration, RANDOM()
+        LIMIT %s
+    """, ('', language, n))
+
+    tasks = []
+    records = p_cursor.fetchall()
+
+    if records:
+        for record in records:
+            if record:
+                table_id, episode_title, authors, language, episode_audio_url, cache_audio_url, cache_audio_file, transcript_file, duration = record
+                tasks.append({
+                    'wid': table_id,
+                    'episode_title': episode_title,
+                    'authors': authors,
+                    'language': language,
+                    'episode_audio_url': episode_audio_url,
+                    'cache_audio_url': cache_audio_url,
+                    'cache_audio_file': cache_audio_file,
+                    'transcript_file': transcript_file,
+                    'duration': duration,
+                    'success': True
+                })
+        return jsonify({'tasks': tasks, 'success': True})
+    else:
+        return jsonify({'success': False, 'error': 'No sufficient tasks available'})
+
 # Client worker registers that he is working on the transcript. Sets transcript_file = 'in_progress' in the db.
 @app.route(api_version + '/register_wip/<wid>/<api_access_key>', methods=['GET'])
 def register_wip(wid, api_access_key):
@@ -167,6 +204,67 @@ def register_wip(wid, api_access_key):
     p_connection.commit()
 
     return jsonify({'success': True})
+
+@app.route(api_version + '/register_wip_batch/<api_access_key>', methods=['POST'])
+def register_wip_batch(api_access_key):
+    if api_secret_key != api_access_key:
+        return jsonify({'success': False, 'error':'api_access_key invalid'})
+
+    # Retrieve the list of wids from the POST request body
+    wids = request.json.get('wids')
+    if not wids:
+        return jsonify({'success': False, 'error': 'No wids provided'})
+
+    try:
+        # Begin a transaction to ensure atomicity
+        p_cursor.execute('BEGIN')
+
+        # Cast wids to integers and check current status of each wid
+        int_wids = list(map(int, wids))  # Ensure wids are integers
+        p_cursor.execute(f"""
+            SELECT {sql_table_ids}, transcript_file
+            FROM {sql_table}
+            WHERE {sql_table_ids} = ANY(%s)
+        """, (int_wids,))
+
+        wip_conflict = []
+        already_transcribed = []
+        to_update = []
+
+        records = p_cursor.fetchall()
+        for record in records:
+            table_id, transcript_file = record
+            if transcript_file == 'in_progress':
+                wip_conflict.append(str(table_id))
+            elif transcript_file != '':
+                already_transcribed.append(str(table_id))
+            else:
+                to_update.append(table_id)
+
+        if wip_conflict or already_transcribed:
+            return jsonify({
+                'success': False,
+                'error': {
+                    'already_in_progress': wip_conflict,
+                    'already_transcribed': already_transcribed
+                }
+            })
+
+        # Update the status to 'in_progress' for all applicable wids
+        if to_update:
+            p_cursor.execute(f"""
+                UPDATE {sql_table}
+                SET transcript_file = 'in_progress'
+                WHERE {sql_table_ids} = ANY(%s)
+            """, (to_update,))
+            p_connection.commit()
+            return jsonify({'success': True, 'updated': to_update})
+        else:
+            return jsonify({'success': False, 'error': 'No eligible work IDs to update'})
+        
+    except Exception as e:
+        p_cursor.execute('ROLLBACK')
+        return jsonify({'success': False, 'error': str(e)})
 
 # Client worker uploads the resulting vtt file. Sets transcript_file to the path of the uploaded file in the db.
 @app.route(api_version + '/upload_result/<wid>/<api_access_key>', methods=['POST'])
@@ -220,6 +318,84 @@ def upload_result(wid, api_access_key):
 
     return jsonify({'success': True})
 
+@app.route(api_version + '/upload_result_batch/<api_access_key>', methods=['POST'])
+def upload_result_batch(api_access_key):
+    if api_secret_key != api_access_key:
+        return jsonify({'success': False, 'error': 'api_access_key invalid'})
+
+    # Retrieve the JSON payload containing wids and file paths
+    results = request.json.get('results')
+    if not results:
+        return jsonify({'success': False, 'error': 'No results provided'})
+
+    try:
+        # Start a transaction to ensure atomicity
+        p_cursor.execute('BEGIN')
+
+        successful_uploads = []
+        errors = []
+
+        for result in results:
+            wid = result.get('wid')
+            file_path = result.get('file_path')
+            model_name = result.get('model', None)
+
+            # Ensure WID is an integer
+            try:
+                wid_int = int(wid)
+            except ValueError:
+                errors.append({'wid': wid, 'error': 'Invalid Work ID format'})
+                continue
+
+            # Fetch the current status and file details
+            p_cursor.execute(f"""
+                SELECT {sql_table_ids}, transcript_file, cache_audio_file, episode_audio_url
+                FROM {sql_table}
+                WHERE {sql_table_ids}=%s
+            """, (wid_int,))
+            record = p_cursor.fetchone()
+
+            if not record:
+                errors.append({'wid': wid, 'error': 'Work ID not found'})
+                continue
+
+            table_id, transcript_file, cache_audio_file, episode_audio_url = record
+
+            if transcript_file != 'in_progress':
+                errors.append({'wid': wid, 'error': 'Work ID not in progress'})
+                continue
+
+            if cache_audio_file == '':
+                errors.append({'wid': wid, 'error': 'No cache file, currently unsupported'})
+                continue
+
+            # Update the transcript_file and model columns
+            if model_name:
+                p_cursor.execute(f"""
+                    UPDATE {sql_table}
+                    SET transcript_file=%s, model=%s
+                    WHERE {sql_table_ids}=%s
+                """, (file_path, model_name, wid_int))
+            else:
+                p_cursor.execute(f"""
+                    UPDATE {sql_table}
+                    SET transcript_file=%s
+                    WHERE {sql_table_ids}=%s
+                """, (file_path, wid_int))
+
+            successful_uploads.append({'wid': wid, 'file_path': file_path})
+
+        if errors:
+            p_cursor.execute('ROLLBACK')
+            return jsonify({'success': False, 'errors': errors})
+
+        p_connection.commit()
+        return jsonify({'success': True, 'uploaded': successful_uploads})
+
+    except Exception as e:
+        p_cursor.execute('ROLLBACK')
+        return jsonify({'success': False, 'error': str(e)})
+
 # Cancel work in progress. Sets transcript_file = '' in the db and makes it available for sampling again.
 # Will throw an error if transcript_file wasn't previously set to in_progress.
 @app.route(api_version + '/cancel_work/<wid>/<api_access_key>', methods=['GET'])
@@ -241,6 +417,63 @@ def cancel_work(wid, api_access_key):
     p_connection.commit()
 
     return jsonify({'success': True})
+
+@app.route(api_version + '/cancel_work_batch/<api_access_key>', methods=['POST'])
+def cancel_work_batch(api_access_key):
+    if api_secret_key != api_access_key:
+        return jsonify({'success': False, 'error': 'api_access_key invalid'})
+
+    # Retrieve the list of wids from the POST request body
+    wids = request.json.get('wids')
+    if not wids:
+        return jsonify({'success': False, 'error': 'No wids provided'})
+
+    try:
+        # Start a transaction to ensure atomicity
+        p_cursor.execute('BEGIN')
+
+        # Cast wids to integers
+        int_wids = list(map(int, wids))
+
+        # Fetch the current status of each wid to ensure they are all in 'in_progress'
+        p_cursor.execute(f"""
+            SELECT {sql_table_ids}, transcript_file
+            FROM {sql_table}
+            WHERE {sql_table_ids} = ANY(%s)
+        """, (int_wids,))
+
+        records = p_cursor.fetchall()
+        update_candidates = []
+        errors = []
+
+        for record in records:
+            table_id, transcript_file = record
+            if transcript_file != 'in_progress':
+                if transcript_file == '':
+                    errors.append({'wid': table_id, 'error': 'Work ID not in progress'})
+                else:
+                    errors.append({'wid': table_id, 'error': 'Work ID already transcribed'})
+            else:
+                update_candidates.append(table_id)
+
+        if errors:
+            return jsonify({'success': False, 'errors': errors})
+
+        # Update the status to '' for all applicable wids
+        if update_candidates:
+            p_cursor.execute(f"""
+                UPDATE {sql_table}
+                SET transcript_file = ''
+                WHERE {sql_table_ids} = ANY(%s)
+            """, (update_candidates,))
+            p_connection.commit()
+            return jsonify({'success': True, 'updated': update_candidates})
+        else:
+            return jsonify({'success': False, 'error': 'No valid wids to update'})
+
+    except Exception as e:
+        p_cursor.execute('ROLLBACK')
+        return jsonify({'success': False, 'error': str(e)})
 
 # must be outside __main__ for gunicorn
 config = load_config()
