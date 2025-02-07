@@ -1,5 +1,7 @@
+ffmpeg-python
 transformers
 datasets
 torchaudio
 openai-whisper
 faster-whisper
+scipy
