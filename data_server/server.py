@@ -151,14 +151,17 @@ def get_work_batch(language, api_access_key, n):
     if api_secret_key != api_access_key:
         return jsonify({'success': False, 'error': 'api_access_key invalid'})
 
-    # Fetch up to n tasks with similar durations
+    # Fetch optional min_duration from query parameters
+    min_duration = request.args.get('min_duration', default=0, type=float)
+
+    # Fetch up to n tasks with specified minimum duration and similar durations
     p_cursor.execute(f"""
         SELECT {sql_table_ids}, episode_title, authors, language, episode_audio_url, cache_audio_url, cache_audio_file, transcript_file, duration
         FROM {sql_table}
-        WHERE transcript_file=%s and language=%s
+        WHERE transcript_file=%s and language=%s and duration >= %s
         ORDER BY duration, RANDOM()
         LIMIT %s
-    """, ('', language, n))
+    """, ('', language, min_duration, n))
 
     tasks = []
     records = p_cursor.fetchall()
