@@ -26,6 +26,20 @@ podcast_columns = 'podcast_episode_id, podcast_title, episode_title, published_d
                         'cache_audio_url, cache_audio_file, transcript_file, duration'
 podcast_columns_list = podcast_columns.split(', ')
 
+def make_local_url(my_url, config):
+    if 'replace_local_audio_url' in config:
+        try:
+            a, b = config[replace_local_audio_url].split('->')
+            return my_url.replace(a, b)  # Make sure to return the modified URL
+        except Exception as e:
+            print('Warning, something went wrong trying to make local url out of:', my_url)
+            print('Error:', str(e))
+            print('Traceback:', traceback.format_exc())
+            print('Using original link instead')
+            return my_url
+    else:
+        print('Warning: replace_local_audio_url not in config, returning unmodified local link.')
+        return my_url
 
 # Returns all podcast titles
 @app.route(api_version + '/get_podcast_list/<language>/<api_access_key>', methods=['GET'])
@@ -101,55 +115,73 @@ def get_every_episode_list(api_access_key):
 
     return jsonify(return_list)
 
+
 # Samples a new untranscribed episode from the db and sends the result as JSON
 # to have more diversity early on, we first sample an author and then a random episode from that author
 # this helps to not over sample from the authors with the most episodes early on
-@app.route(api_version + '/get_work/<language>/<api_access_key>', methods=['GET'])
+@app.route('/api/v1/get_work/<language>/<api_access_key>', methods=['GET'])
 def get_work(language, api_access_key):
-   
+    # Security check for API access key
     if api_secret_key != api_access_key:
-        return jsonify({'success':False, 'error':'api_access_key invalid'})
+        return jsonify({'success': False, 'error': 'API access key invalid'}), 401
 
-    return_dict = {'success':False, 'error':'SQL query did not execute'}
-   
-    # First sample an author (that still has empty transcripts)
-    p_cursor.execute(f'SELECT authors,count({sql_table_ids}) from podcasts '
-                     'WHERE transcript_file=%s and language=%s GROUP BY authors ORDER BY RANDOM() '
-                     'LIMIT 1', ('',language) )
-    record = p_cursor.fetchone()
+    # Validate language input
+    if not language.isalpha():
+        return jsonify({'success': False, 'error': 'Invalid language format'}), 400
 
-    print("language:", language)
-    print("Sampled author:",record)
+    try:
+        # Sample an author with untranscribed episodes in the given language
+        p_cursor.execute("""
+            SELECT authors, count(%s) as episode_count FROM podcasts
+            WHERE transcript_file = %s AND language = %s
+            GROUP BY authors
+            ORDER BY RANDOM()
+            LIMIT 1
+        """, (sql_table_ids, '', language))
+        author_record = p_cursor.fetchone()
+        
+        print("Language:", language)
+        print("Sampled author:", author_record)
 
-    if record is not None and len(record) > 0:
-        authors, count_episodes = record
-
-        # Use the sampled author to sample a random untranscribed episode from that author
-        p_cursor.execute(f'SELECT {sql_table_ids}, episode_title, authors, language, episode_audio_url, cache_audio_url, '
-                            f'cache_audio_file, transcript_file FROM {sql_table} '
-                            'WHERE transcript_file=%s and language=%s and authors=%s ORDER BY RANDOM() '
-                            'LIMIT 1', ('',language, authors) )
-
-        record = p_cursor.fetchone()
-
-        if record is not None and len(record) > 0:
-            print(record)
-            table_id, episode_title, authors, language, episode_audio_url, cache_audio_url, cache_audio_file, transcript_file = record
-            return_dict = {'wid':table_id, 'episode_title':episode_title, 'authors':authors,
-                            'language':language, 'episode_audio_url':episode_audio_url, 'cache_audio_url':cache_audio_url,
-                            'cache_audio_file':cache_audio_file, 'transcript_file':transcript_file, 'success':True}
+        if author_record:
+            # Sample a random untranscribed episode from the sampled author
+            p_cursor.execute(f"""
+                SELECT {sql_table_ids}, episode_title, authors, language, episode_audio_url, cache_audio_url, 
+                cache_audio_file, transcript_file, duration FROM {sql_table}
+                WHERE transcript_file = %s AND language = %s AND authors = %s
+                ORDER BY RANDOM()
+                LIMIT 1
+            """, ('', language, author_record['authors']))
+            episode_record = p_cursor.fetchone()
+            
+            if episode_record:
+                table_id, episode_title, authors, language, episode_audio_url, cache_audio_url, cache_audio_file, transcript_file, duration = episode_record
+                return jsonify({
+                    'wid': table_id,
+                    'episode_title': episode_title,
+                    'authors': authors,
+                    'language': language,
+                    'episode_audio_url': episode_audio_url,
+                    'cache_audio_url': cache_audio_url,
+                    'local_cache_audio_url': make_local_url(cache_audio_url),
+                    'cache_audio_file': cache_audio_file,
+                    'transcript_file': transcript_file,
+                    'duration': duration,
+                    'success': True
+                })
+            else:
+                return jsonify({'success': False, 'error': f'No episodes without transcription for author: {author_record["authors"]}'}), 404
         else:
-            return_dict = {'success':False, 'error':'No episodes without transcription for author: '+authors}
+            return jsonify({'success': False, 'error': f'No episodes left without transcriptions for language {language}.'}), 404
+    except Exception as e:
+        app.logger.error('Unexpected error:', exc_info=True)
+        return jsonify({'success': False, 'error': 'An unexpected error occurred'}), 500
 
-    else:
-        return_dict = {'success':False, 'error':f'No episodes left without transcriptions for language {language}.'}
-
-    return jsonify(return_dict)
 
 @app.route(api_version + '/get_work_batch/<language>/<api_access_key>/<int:n>', methods=['GET'])
 def get_work_batch(language, api_access_key, n):
     if api_secret_key != api_access_key:
-        return jsonify({'success': False, 'error': 'api_access_key invalid'})
+        return jsonify({'success': False, 'error': 'api_access_key invalid'}), 401
 
     # Fetch optional min_duration from query parameters
     min_duration = request.args.get('min_duration', default=0, type=float)
@@ -177,6 +209,7 @@ def get_work_batch(language, api_access_key, n):
                     'language': language,
                     'episode_audio_url': episode_audio_url,
                     'cache_audio_url': cache_audio_url,
+                    'local_cache_audio_url': make_local_url(cache_audio_url),
                     'cache_audio_file': cache_audio_file,
                     'transcript_file': transcript_file,
                     'duration': duration,
@@ -184,7 +217,7 @@ def get_work_batch(language, api_access_key, n):
                 })
         return jsonify({'tasks': tasks, 'success': True})
     else:
-        return jsonify({'success': False, 'error': 'No sufficient tasks available'})
+        return jsonify({'success': False, 'error': 'No sufficient tasks available'}), 404
 
 # Client worker registers that he is working on the transcript. Sets transcript_file = 'in_progress' in the db.
 @app.route(api_version + '/register_wip/<wid>/<api_access_key>', methods=['GET'])
