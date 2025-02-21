@@ -101,31 +101,6 @@ def transcribe_batch(audio_urls, device='cuda'):
 
     return transcriptions
 
-#def transcribe_batch(audio_urls, device='cuda'):
-#    """Uses Whisper to transcribe a batch of audio URLs."""
-#    model_id = "openai/whisper-large-v3"
-#    processor = AutoProcessor.from_pretrained(model_id)
-#    model = WhisperForConditionalGeneration.from_pretrained(model_id)
-#    model.to(device)
-#
-#    # Prepare dataset
-#
-#    # Load and process audio files using Dataset
-#    audio_dataset = Dataset.from_dict({"audio": audio_urls}).cast_column("audio", Audio(sampling_rate=16000))
-#
-#    #audio_dataset = load_dataset("audio", data_files={"train": audio_urls}, split="train")
-#    #audio_dataset = audio_dataset.cast_column("audio", Audio(sampling_rate=16000))
-#    raw_audio = [x["array"].astype(np.float32) for x in audio_dataset["audio"]]
-#
-#    inputs = processor(raw_audio, return_tensors="pt", padding="longest", return_attention_mask=True, sampling_rate=16000)
-#    inputs = inputs.to(device, torch.float16)
-#
-#    # Transcription
-#    results = model.generate(**inputs, condition_on_prev_tokens=True)
-#    transcriptions = processor.batch_decode(results, skip_special_tokens=True)
-#
-#    return transcriptions
-
 if __name__ == "__main__":
     language = 'en'
     batch_size = 4
