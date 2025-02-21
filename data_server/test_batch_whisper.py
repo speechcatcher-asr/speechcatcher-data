@@ -15,9 +15,9 @@ config = load_config()
 api_base_url = config['server_api_url'] # Base URL of the API
 api_access_key = config['secret_api_key'] # API secret key
 
-def fetch_batch(language, n):
+def fetch_batch(language, n, min_duration):
     """Fetch a batch of work from the server."""
-    url = f"{api_base_url}/get_work_batch/{language}/{api_access_key}/{n}"
+    url = f"{api_base_url}/get_work_batch/{language}/{api_access_key}/{n}?min_duration={min_duration}"
     response = requests.get(url)
     if response.status_code == 200:
         return response.json()['tasks']
@@ -104,7 +104,8 @@ def transcribe_batch(audio_urls, device='cuda'):
 if __name__ == "__main__":
     language = 'en'
     batch_size = 4
-    tasks = fetch_batch(language, batch_size)
+    min_duration = 280.0
+    tasks = fetch_batch(language, batch_size, min_duration)
     print(tasks)
     if tasks:
         audio_urls = [task['cache_audio_url'] for task in tasks]
