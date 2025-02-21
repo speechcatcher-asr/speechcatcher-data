@@ -29,7 +29,7 @@ podcast_columns_list = podcast_columns.split(', ')
 def make_local_url(my_url, config):
     if 'replace_local_audio_url' in config:
         try:
-            a, b = config[replace_local_audio_url].split('->')
+            a, b = config['replace_local_audio_url'].split('->')
             return my_url.replace(a, b)  # Make sure to return the modified URL
         except Exception as e:
             print('Warning, something went wrong trying to make local url out of:', my_url)
@@ -163,7 +163,7 @@ def get_work(language, api_access_key):
                     'language': language,
                     'episode_audio_url': episode_audio_url,
                     'cache_audio_url': cache_audio_url,
-                    'local_cache_audio_url': make_local_url(cache_audio_url),
+                    'local_cache_audio_url': make_local_url(cache_audio_url, config),
                     'cache_audio_file': cache_audio_file,
                     'transcript_file': transcript_file,
                     'duration': duration,
@@ -209,7 +209,7 @@ def get_work_batch(language, api_access_key, n):
                     'language': language,
                     'episode_audio_url': episode_audio_url,
                     'cache_audio_url': cache_audio_url,
-                    'local_cache_audio_url': make_local_url(cache_audio_url),
+                    'local_cache_audio_url': make_local_url(cache_audio_url, config),
                     'cache_audio_file': cache_audio_file,
                     'transcript_file': transcript_file,
                     'duration': duration,
