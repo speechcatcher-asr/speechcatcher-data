@@ -86,7 +86,10 @@ def transcribe_batch(audio_urls, device='cuda'):
             raw_audio_data.append(np.array([]))  # Handle error in conversion by appending empty array
 
     # assume long form
-    inputs = processor(raw_audio_data, return_tensors="pt", padding="longest", return_attention_mask=True, sampling_rate=16000)
+    inputs = processor(raw_audio_data, return_tensors="pt",
+                       padding="longest",
+                       return_attention_mask=True,
+                       sampling_rate=16000)
     
     if inputs.input_features.shape[-1] < 3000:
         # we in-fact have short-form ASR (less than 30s) -> pre-process accordingly
@@ -98,8 +101,16 @@ def transcribe_batch(audio_urls, device='cuda'):
     inputs = inputs.to(device, torch.float16)
 
     # Start transcription on the batch
-    results = model.generate(**inputs, condition_on_prev_tokens=True)
-    transcriptions = processor.batch_decode(results, skip_special_tokens=True)
+    results = model.generate(**inputs, condition_on_prev_tokens=True,
+                             task="transcribe",
+                             return_timestamps=True,
+                             #return_token_timestamps=True,
+                             #output_scores=True,
+                             return_segments=True)
+
+    print('results:', results)
+
+    transcriptions = processor.batch_decode(results['sequences'], skip_special_tokens=True)
 
     return transcriptions
 
@@ -115,7 +126,7 @@ if __name__ == "__main__":
 
         transcriptions = transcribe_batch(audio_urls)
         
-        print('transcriptions:',transcriptions)
+        print('transcriptions:', '\n\n'.join(transcriptions))
 
         #write_vtt_files(transcriptions, tasks)
     else:
