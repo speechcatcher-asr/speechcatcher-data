@@ -89,13 +89,15 @@ def transcribe_batch(audio_urls, device='cuda'):
     inputs = processor(raw_audio_data, return_tensors="pt", padding="longest", return_attention_mask=True, sampling_rate=16000)
     
     if inputs.input_features.shape[-1] < 3000:
-        # we in-fact have short-form -> pre-process accordingly
+        # we in-fact have short-form ASR (less than 30s) -> pre-process accordingly
         # see https://github.com/huggingface/transformers/issues/30740
         inputs = processor(raw_audio_data, return_tensors="pt", sampling_rate=16000)
+        print('Short input detected (<30s), using short-form pre-processor.')
 
+    # also convert inputs to 16 bit floats
     inputs = inputs.to(device, torch.float16)
 
-    # Transcription
+    # Start transcription on the batch
     results = model.generate(**inputs, condition_on_prev_tokens=True)
     transcriptions = processor.batch_decode(results, skip_special_tokens=True)
 
