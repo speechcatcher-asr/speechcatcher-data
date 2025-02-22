@@ -26,7 +26,7 @@ def fetch_batch(language, n, min_duration):
         return []
 
 
-def convert_audio_in_memory_old(audio_url):
+def convert_audio_in_memory(audio_url):
     """Converts an audio file to 16 kHz mono WAV using FFmpeg, directly in memory."""
     try:
         out, _ = (
@@ -40,34 +40,6 @@ def convert_audio_in_memory_old(audio_url):
         print(e.stderr.decode('utf-8'))  # Decode and print stderr for detailed ffmpeg error
         return None
 
-def convert_audio_in_memory(audio_url):
-    """Converts an audio file to 16 kHz mono WAV using FFmpeg, directly in memory, and pads if necessary."""
-    try:
-        # Convert and capture output in-memory
-        out, _ = (
-            ffmpeg.input(audio_url)
-            .output('pipe:', format='wav', acodec='pcm_s16le', ac=1, ar='16k')
-            .run(capture_stdout=True, capture_stderr=True)
-        )
-        # Load the audio data from bytes
-        wav_file = io.BytesIO(out)
-        rate, data = wav_read(wav_file)
-        
-        # Calculate the minimum length (30 seconds at 16 kHz)
-        min_length = 30 * rate  # 30 seconds * samples per second
-        
-        if len(data) < min_length:
-            # If the data is too short, pad it with zeros
-            padding = np.zeros(min_length - len(data), dtype=np.int16)
-            data = np.concatenate((data, padding))
-        
-        # Ensure the data is returned as bytes
-        return io.BytesIO(bytes(data))
-    except ffmpeg.Error as e:
-        print("FFmpeg error occurred:")
-        print(e.stderr.decode('utf-8'))
-        return None
-
 def transcribe_batch(audio_urls, device='cuda'):
     """Uses Whisper to transcribe a batch of audio URLs."""
     model_id = "openai/whisper-large-v3"
@@ -77,7 +49,7 @@ def transcribe_batch(audio_urls, device='cuda'):
 
     raw_audio_data = []
     for url in audio_urls:
-        audio_data = convert_audio_in_memory_old(url)
+        audio_data = convert_audio_in_memory(url)
         print('audio_data type:', type(audio_data))
         if audio_data:
             rate, data = wav_read(io.BytesIO(audio_data))
