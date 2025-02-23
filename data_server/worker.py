@@ -17,12 +17,13 @@ from typing import Iterator, TextIO
 # The write_vtt function was replaced in whisper, its a bit annoying
 # this is the old version, copied from a previous version of whisper
 # see https://github.com/openai/whisper/commit/da600abd2b296a5450770b872c3765d0a5a5c769
-def write_vtt(transcript: Iterator[dict], file: TextIO, fast_whisper=True):
+def write_vtt(transcript: Iterator[dict], file: TextIO, fast_whisper=False):
     print("WEBVTT\n", file=file)
     for segment in transcript:
         if fast_whisper:
             # make faster-whisper output compatible with OG whisper
             segment = {"start": segment.start, "end": segment.end, "text": segment.text}
+        print(segment)
         print(
             f"{format_timestamp(segment['start'])} --> {format_timestamp(segment['end'])}\n"
             f"{segment['text'].strip().replace('-->', '->')}\n",
