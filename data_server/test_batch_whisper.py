@@ -8,6 +8,8 @@ import torch
 import io
 from scipy.io.wavfile import read as wav_read
 from utils import load_config
+import inspect
+from worker import write_vtt
 
 config = load_config()
 
@@ -39,6 +41,25 @@ def convert_audio_in_memory(audio_url):
         print("FFmpeg error occurred:")
         print(e.stderr.decode('utf-8'))  # Decode and print stderr for detailed ffmpeg error
         return None
+
+def get_transcript_segments(results, processor, strip_segment_text=True):
+    """
+    Extracts transcript segments from the model's batch results and decodes them into
+    a list of a list of dictionaries with 'start', 'end', and 'text' keys.
+    """
+
+    batch_list = []
+    for batch in results['segments']:
+        segments_list = []
+        for seg in batch:
+            # Convert start and end from tensor to float
+            start = seg['start'].item() if hasattr(seg['start'], 'item') else float(seg['start'])
+            end = seg['end'].item() if hasattr(seg['end'], 'item') else float(seg['end'])
+            # Decode the token IDs stored in 'result'
+            text = processor.tokenizer.decode(seg['tokens'], skip_special_tokens=True)
+            segments_list.append({"start": start, "end": end, "text": text.strip() if strip_segment_text else text})
+        batch_list.append(segments_list)
+    return batch_list
 
 def transcribe_batch(audio_urls, device='cuda'):
     """Uses Whisper to transcribe a batch of audio URLs."""
@@ -80,9 +101,7 @@ def transcribe_batch(audio_urls, device='cuda'):
                              #output_scores=True,
                              return_segments=True)
 
-    print('results:', results)
-
-    transcriptions = processor.batch_decode(results['sequences'], skip_special_tokens=True)
+    transcriptions = get_transcript_segments(results, processor)
 
     return transcriptions
 
@@ -93,14 +112,20 @@ if __name__ == "__main__":
     tasks = fetch_batch(language, batch_size, min_duration)
     print(tasks)
     if tasks:
-        audio_urls = [task['cache_audio_url'] for task in tasks]
+        audio_urls = [task['local_cache_audio_url'] for task in tasks]
         print('audio_urls:', audio_urls)
 
+        # transcribe a batch of input (audio) urls
         transcriptions = transcribe_batch(audio_urls)
-        
-        print('transcriptions:', '\n\n'.join(transcriptions))
 
-        #write_vtt_files(transcriptions, tasks)
+        # write out transcriptions as vtt
+        for audio_url, transcription in zip(audio_urls, transcriptions):
+            print('Write transcription for:', audio_url)
+            filename_out = audio_url.split('/')[-1] + '.vtt'
+            with open(filename_out, 'w') as file_out:
+                write_vtt(transcription, file_out)
+                print(f'Wrote vtt to: {filename_out}')
+
     else:
         print("No tasks fetched, nothing to transcribe.")
 
