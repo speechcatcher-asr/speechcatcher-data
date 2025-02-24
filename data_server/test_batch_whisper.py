@@ -2,6 +2,7 @@ import requests
 import whisper
 import ffmpeg
 from transformers import WhisperForConditionalGeneration, AutoProcessor
+from transformers.utils import is_flash_attn_2_available
 from datasets import Dataset, load_dataset, Audio
 import numpy as np
 import torch
@@ -10,12 +11,26 @@ from scipy.io.wavfile import read as wav_read
 from utils import load_config
 import inspect
 from worker import write_vtt
+import json
 
 config = load_config()
 
 # Configuration
 api_base_url = config['server_api_url'] # Base URL of the API
 api_access_key = config['secret_api_key'] # API secret key
+
+def default_converter(o):
+    if isinstance(o, np.ndarray):
+        # Direct conversion for NumPy arrays to list
+        return 'np:'+str(len(o.tolist()))
+    elif isinstance(o, torch.Tensor):
+        rlist = o.cpu().numpy().tolist()
+        if type(rlist) == float:
+            return rlist
+        # Ensure tensor is on CPU, convert to NumPy, then to list
+        return 't:'+str(len(rlist))
+    # Raise error for other non-serializable types
+    raise TypeError(f"Object of type {o.__class__.__name__} is not JSON serializable")
 
 def fetch_batch(language, n, min_duration):
     """Fetch a batch of work from the server."""
@@ -55,17 +70,27 @@ def get_transcript_segments(results, processor, strip_segment_text=True):
             # Convert start and end from tensor to float
             start = seg['start'].item() if hasattr(seg['start'], 'item') else float(seg['start'])
             end = seg['end'].item() if hasattr(seg['end'], 'item') else float(seg['end'])
+            print(start,end)
             # Decode the token IDs stored in 'result'
             text = processor.tokenizer.decode(seg['tokens'], skip_special_tokens=True)
             segments_list.append({"start": start, "end": end, "text": text.strip() if strip_segment_text else text})
         batch_list.append(segments_list)
     return batch_list
 
-def transcribe_batch(audio_urls, device='cuda'):
+def transcribe_batch(audio_urls, language='en', device='cuda'):
     """Uses Whisper to transcribe a batch of audio URLs."""
     model_id = "openai/whisper-large-v3"
     processor = AutoProcessor.from_pretrained(model_id)
-    model = WhisperForConditionalGeneration.from_pretrained(model_id)
+
+    attn = "flash_attention_2" if is_flash_attn_2_available() else "sdpa"
+
+    print('Using attention implementation:', attn)
+
+    model = WhisperForConditionalGeneration.from_pretrained(model_id, attn_implementation=attn)
+
+#    model.generation_config.language = f"<|{language}|>"
+#    model.generation_config.task = "transcribe"
+
     model.to(device).half()
 
     raw_audio_data = []
@@ -78,28 +103,44 @@ def transcribe_batch(audio_urls, device='cuda'):
         else:
             raw_audio_data.append(np.array([]))  # Handle error in conversion by appending empty array
 
-    # assume long form
+    # see https://github.com/huggingface/transformers/blob/main/src/transformers/models/whisper/feature_extraction_whisper.py
+    # make sure to not truncate the input audio + to return the `attention_mask` and to pad to the longest audio
     inputs = processor(raw_audio_data, return_tensors="pt",
                        padding="longest",
                        return_attention_mask=True,
+                       do_normalize=True,
+                       truncation=False,
                        sampling_rate=16000)
-    
-    if inputs.input_features.shape[-1] < 3000:
+   
+    print('Input features shape: ', inputs.input_features.shape)
+
+    if inputs.input_features.shape[-1] <= 3000:
         # we in-fact have short-form ASR (less than 30s) -> pre-process accordingly
         # see https://github.com/huggingface/transformers/issues/30740
-        inputs = processor(raw_audio_data, return_tensors="pt", sampling_rate=16000)
-        print('Short input detected (<30s), using short-form pre-processor.')
+        inputs = processor(raw_audio_data, return_tensors="pt", sampling_rate=16000, do_normalize=True, truncation=True)
+        print('Short input detected (<=30s), using short-form pre-processor.')
+    else:
+        print('Long input detected (>30s), using long-form pre-processor.')
 
     # also convert inputs to 16 bit floats
     inputs = inputs.to(device, torch.float16)
 
     # Start transcription on the batch
+    # see https://github.com/huggingface/transformers/blob/main/src/transformers/models/whisper/generation_whisper.py
     results = model.generate(**inputs, condition_on_prev_tokens=True,
                              task="transcribe",
+                             language=language,
+                             is_multilingual=True,
                              return_timestamps=True,
+                             #temperature=(0.0, 0.2, 0.4, 0.6, 0.8, 1.0),
+                             compression_ratio_threshold=1.35,
+                             #logprob_threshold=-1.,
                              #return_token_timestamps=True,
                              #output_scores=True,
                              return_segments=True)
+
+    with open('transformer_whisper_debug_output.json', 'w') as file:
+        json.dump(results, file, indent=4, default=default_converter)
 
     transcriptions = get_transcript_segments(results, processor)
 
