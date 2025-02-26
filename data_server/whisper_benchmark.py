@@ -5,7 +5,7 @@ import subprocess
 import requests
 import re
 import jiwer
-from whisper_single_file import WhisperOriginal, FasterWhisper
+from whisper_single_file import WhisperOriginal, FasterWhisper, WhisperX
 from utils import load_config
 
 config = load_config()
@@ -114,7 +114,7 @@ def main():
     parser.add_argument('--batch_size', type=int, default=4, help='Number of audio files to process in a batch')
     parser.add_argument('--beam_size', type=int, default=5, help='Decoding beam size')
     parser.add_argument('--min_duration', type=float, default=280.0, help='Minimum duration of audio files in seconds')
-    parser.add_argument('--implementation', choices=['original', 'faster'], default='original', help='Select the whisper implementation to use')
+    parser.add_argument('--implementation', choices=['original', 'faster', 'X'], default='original', help='Select the whisper implementation to use')
     parser.add_argument('--force-cli-reference-rerun', action='store_true', help='Force rerun of Whisper CLI for reference transcriptions even if they exist')
     args = parser.parse_args()
 
@@ -139,6 +139,8 @@ def main():
         transcriber = WhisperOriginal(beam_size=args.beam_size)
     elif args.implementation == 'faster': 
         transcriber = FasterWhisper(beam_size=args.beam_size)
+    elif args.implementation == 'X':
+        transcriber = WhisperX(beam_size=args.beam_size)
     else:
         raise NotImplementedError("Not implemented:", args.implementation) 
 
@@ -156,7 +158,7 @@ def main():
         total_audio_duration += duration
 
         start_time = time.time()
-        transcription = transcriber.transcribe(audio_url, language=args.language)
+        transcription = transcriber.transcribe(audio_url, language=args.language, duration=duration)
         transcription_time = time.time() - start_time
         total_processing_time += transcription_time
 
