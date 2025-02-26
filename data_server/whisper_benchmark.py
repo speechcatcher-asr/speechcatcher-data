@@ -131,7 +131,7 @@ def main():
         print("No tasks fetched, nothing to transcribe.")
         return
 
-    audio_urls = [task['local_cache_audio_url'] for task in tasks]
+    audio_urls = [(task['local_cache_audio_url'], task['duration']) for task in tasks]
     print('audio_urls:', audio_urls)
 
     # Transcription based on the selected implementation
@@ -148,14 +148,14 @@ def main():
 
     wers = []
     cers = []
-    total_audio_duration = 0  # in seconds
-    total_processing_time = 0  # in seconds
+    total_audio_duration = 0.  # in seconds
+    total_processing_time = 0.  # in seconds
 
-    start_time = time.time()
-    for audio_url in audio_urls:
+    for audio_url, duration in audio_urls:
         # Assuming each file is of the `min_duration` length
-        total_audio_duration += args.min_duration
+        total_audio_duration += duration
 
+        start_time = time.time()
         transcription = transcriber.transcribe(audio_url, language=args.language)
         transcription_time = time.time() - start_time
         total_processing_time += transcription_time
@@ -170,7 +170,8 @@ def main():
         if args.force_cli_reference_rerun or not os.path.exists(reference_file_path):
             transcribe_with_cli(audio_url, reference_dir)
         else:
-            print(f'Not overwriting {reference_file_path} with Whisper CLI since it already exists. You can force to redo the reference transcription with --force-cli-reference-rerun.')
+            print(f'Not overwriting {reference_file_path} with Whisper CLI since it already exists.'
+                  'You can force to redo the reference transcription with --force-cli-reference-rerun.')
 
         # Calculate WER and CER using extracted text
         wer, cer = calculate_wer_cer(reference_file_path, file_path)
@@ -179,12 +180,14 @@ def main():
         wers.append(wer)
         cers.append(cer)
 
-    transcription_speed = total_audio_duration / total_processing_time * 3600  # in hours per hour
+    # transcription_speed in in hours per hour, or minutes per minute, or seconds per second
+    transcription_speed = total_audio_duration / total_processing_time
 
     # Output summary report
     print("\nSummary Report:")
-    print(f"Model Load Time: {model_load_time:.2f} seconds")
-    print(f"Total Transcription Time: {total_processing_time:.2f} seconds")
+    print(f"Model load time: {model_load_time:.2f} seconds")
+    print(f"Total transcription processing time: {total_processing_time:.2f} seconds")
+    print(f"Total audio time transcribed: {total_audio_duration:.2f} seconds")
     print(f"Average WER: {sum(wers) / len(wers):.4f}")
     print(f"Average CER: {sum(cers) / len(cers):.4f}")
     print(f"Transcription Speed: {transcription_speed:.2f} hours per hour")
