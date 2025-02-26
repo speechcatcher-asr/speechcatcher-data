@@ -113,6 +113,7 @@ def main():
     parser.add_argument('--beam_size', type=int, default=5, help='Decoding beam size')
     parser.add_argument('--min_duration', type=float, default=280.0, help='Minimum duration of audio files in seconds')
     parser.add_argument('--implementation', choices=['original', 'faster'], default='original', help='Select the whisper implementation to use')
+    parser.add_argument('--force-cli-reference-rerun', action='store_true', help='Force rerun of Whisper CLI for reference transcriptions even if they exist')
     args = parser.parse_args()
 
     # Directory setup
@@ -164,7 +165,10 @@ def main():
 
         # Transcribe with CLI for reference
         reference_file_path = os.path.join(reference_dir, filename)
-        transcribe_with_cli(audio_url, reference_dir)
+        if args.force_cli_reference_rerun or not os.path.exists(reference_file_path):
+            transcribe_with_cli(audio_url, reference_dir)
+        else:
+            print('Not overwriting {reference_file_path} with Whisper CLI since it already exists. You can force to redo the reference transcription with --force-cli-reference-rerun.')
 
         # Calculate WER and CER using extracted text
         wer, cer = calculate_wer_cer(reference_file_path, file_path)
