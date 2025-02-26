@@ -79,7 +79,7 @@ def extract_text_from_vtt(vtt_content):
     text_only = '\n'.join(text_lines).strip()
     return text_only
 
-def calculate_wer_cer(reference_path, hypothesis_path, language="en", lower_case=True, remove_punctuation=True):
+def calculate_wer_cer(reference_path, hypothesis_path, language="en", wer_lower_case=True):
     with open(reference_path, 'r') as ref_file, open(hypothesis_path, 'r') as hyp_file:
         ref_content = ref_file.read()
         hyp_content = hyp_file.read()
@@ -91,7 +91,7 @@ def calculate_wer_cer(reference_path, hypothesis_path, language="en", lower_case
         ref_tokens = simple_tokenizer(ref_text)
         hyp_tokens = simple_tokenizer(hyp_text)
 
-        if lower_case:
+        if wer_lower_case:
             ref_tokens = [token.lower() for token in ref_tokens]
             hyp_tokens = [token.lower() for token in hyp_tokens]
 
@@ -101,8 +101,10 @@ def calculate_wer_cer(reference_path, hypothesis_path, language="en", lower_case
         joined_ref_tokens = ' '.join(ref_tokens)
         joined_hyp_tokens = ' '.join(hyp_tokens)
 
+        # Run wer computation on lower cased words with no punctuation (default settings) 
         wer_score = jiwer.wer(joined_ref_tokens, joined_hyp_tokens)
-        cer_score = jiwer.cer(joined_ref_tokens, joined_hyp_tokens)
+        # Compare transcripts on the character level with punctuation and casing
+        cer_score = jiwer.cer(ref_text, hyp_text)
 
         return wer_score, cer_score
 
@@ -168,7 +170,7 @@ def main():
         if args.force_cli_reference_rerun or not os.path.exists(reference_file_path):
             transcribe_with_cli(audio_url, reference_dir)
         else:
-            print('Not overwriting {reference_file_path} with Whisper CLI since it already exists. You can force to redo the reference transcription with --force-cli-reference-rerun.')
+            print(f'Not overwriting {reference_file_path} with Whisper CLI since it already exists. You can force to redo the reference transcription with --force-cli-reference-rerun.')
 
         # Calculate WER and CER using extracted text
         wer, cer = calculate_wer_cer(reference_file_path, file_path)

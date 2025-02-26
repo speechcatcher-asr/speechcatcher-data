@@ -23,13 +23,13 @@ class WhisperSingleFile:
         }
 
     def load_model(self):
-        raise NotImplementedError("This method should be overridden by subclasses.")
+        raise NotImplementedError('This method should be overridden by subclasses.')
 
     def transcribe(self, url, params=None):
-        raise NotImplementedError("This method should be overridden by subclasses.")
+        raise NotImplementedError('This method should be overridden by subclasses.')
 
     def write_vtt(self, transcript, file):
-        raise NotImplementedError("This method should be overridden by subclasses.")
+        raise NotImplementedError('This method should be overridden by subclasses.')
 
 class WhisperOriginal(WhisperSingleFile):
     def load_model(self):
@@ -40,11 +40,13 @@ class WhisperOriginal(WhisperSingleFile):
             params = self.default_params
         if language is not None:
             params.update({'language': language})
+        print('Running single-file transcription with OG Whisper fp16 implementation on:', url)
+        print('Beam size is:', params['beam_size'])
         return self.model.transcribe(url, **params)
 
-    def write_vtt(self, transcript, file):
+    def write_vtt(self, result, file):
         print("WEBVTT\n", file=file)
-        for segment in transcript:
+        for segment in result['segments']:
             print(
                 f"{whisper.utils.format_timestamp(segment['start'])} --> {whisper.utils.format_timestamp(segment['end'])}\n"
                 f"{segment['text'].strip().replace('-->', '->')}\n",
@@ -63,7 +65,7 @@ class FasterWhisper(WhisperSingleFile):
         self.batched_model = None
 
     def load_model(self):
-        self.model = WhisperModel(self.model_name, device=self.device, compute_type="float16")
+        self.model = WhisperModel(self.model_name, device=self.device, compute_type='float16')
         self.batched_model = BatchedInferencePipeline(model=self.model)
 
     def transcribe(self, url, language=None, vad_filter=False, params=None):
@@ -72,15 +74,14 @@ class FasterWhisper(WhisperSingleFile):
         params.update({'vad_filter': True})
         if language is not None:
             params['language'] = language
-        print(params)
-        print()
+        print('Running single-file transcription with CTranslate2 FasterWhisper fp16 implementation on:', url)
+        print('Beam size is:', params['beam_size'])
         result = self.batched_model.transcribe(url, **params)
         segments, info = result
         return {'segments': list(segments), 'language': info.language}
 
     def write_vtt(self, result, file):
         print("WEBVTT\n", file=file)
-        print(result)
         for segment in result['segments']:
             print(
                 f"{whisper.utils.format_timestamp(segment.start)} --> {whisper.utils.format_timestamp(segment.end)}\n"
