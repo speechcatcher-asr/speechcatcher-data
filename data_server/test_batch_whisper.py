@@ -88,10 +88,18 @@ def transcribe_batch(audio_urls, language='en', device='cuda'):
 
     model = WhisperForConditionalGeneration.from_pretrained(model_id, attn_implementation=attn)
 
+    print('Model initialized.')
+
+    #Enable static cache and compile the forward pass
+    model.generation_config.cache_implementation = "static"
+    model.forward = torch.compile(model.forward, mode="reduce-overhead", fullgraph=True)
+    print('Compiled forward graph for efficiency.')
 #    model.generation_config.language = f"<|{language}|>"
 #    model.generation_config.task = "transcribe"
 
     model.to(device).half()
+
+    print('Model loaded to GPU!')
 
     raw_audio_data = []
     for url in audio_urls:
@@ -127,14 +135,18 @@ def transcribe_batch(audio_urls, language='en', device='cuda'):
 
     # Start transcription on the batch
     # see https://github.com/huggingface/transformers/blob/main/src/transformers/models/whisper/generation_whisper.py
-    results = model.generate(**inputs, condition_on_prev_tokens=True,
+    results = model.generate(**inputs, 
                              task="transcribe",
                              language=language,
                              is_multilingual=True,
                              return_timestamps=True,
+                             num_beams=3,
+                             do_sample=True,
+                             condition_on_prev_tokens=True,
+                             temperature=0.1,
                              #temperature=(0.0, 0.2, 0.4, 0.6, 0.8, 1.0),
-                             compression_ratio_threshold=1.35,
-                             #logprob_threshold=-1.,
+                             #compression_ratio_threshold=1.35,
+                             # logprob_threshold=-1.,
                              #return_token_timestamps=True,
                              #output_scores=True,
                              return_segments=True)
