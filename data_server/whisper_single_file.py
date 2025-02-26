@@ -4,6 +4,7 @@ from faster_whisper import WhisperModel, BatchedInferencePipeline
 import io
 
 class WhisperSingleFile:
+    '''Base class for Whisper implementations that work operate on single files.'''
     def __init__(self, model_name='large-v3', device='cuda', language='english', beam_size=5):
         self.model_name = model_name
         self.device = device
@@ -33,6 +34,7 @@ class WhisperSingleFile:
         raise NotImplementedError('This method should be overridden by subclasses.')
 
 class WhisperOriginal(WhisperSingleFile):
+    '''A speechcatcher-data abstraction for https://github.com/openai/whisper'''
     def load_model(self):
         self.model = whisper.load_model(self.model_name, device=self.device)
 
@@ -56,6 +58,7 @@ class WhisperOriginal(WhisperSingleFile):
             )
 
 class FasterWhisper(WhisperSingleFile):
+    '''A speechcatcher-data abstraction for https://github.com/SYSTRAN/faster-whisper'''
     def __init__(self, model_name='large-v3', device='cuda', language='en', beam_size=5, use_vad=True):
         super().__init__(model_name, device, language, beam_size)
         # Remove arguments that are unsupported by this implemenation
@@ -96,6 +99,7 @@ class FasterWhisper(WhisperSingleFile):
             )
 
 class WhisperX(FasterWhisper):
+    '''A speechcatcher-data abstraction for https://github.com/m-bain/whisperX'''
     def __init__(self, model_name='large-v3', device='cuda', language='en', beam_size=5, use_vad=True):
         super().__init__(model_name, device, language, beam_size, use_vad)
         # Remove arguments that are unsupported by this implemenation
