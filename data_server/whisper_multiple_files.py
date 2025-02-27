@@ -43,6 +43,18 @@ class BatchedTransformerWhisper(WhisperMultipleFile):
     def __init__(self, model_name='large-v3', device='cuda', language='english', beam_size=5):
         super().__init__(model_name, device, language, beam_size)
         self.processor = None
+        self.default_params = {
+                'task': 'transcribe',
+                'language': language,
+                'is_multilingual': True,
+                'return_timestamps': True,
+                'return_segments': True,
+                'num_beams': beam_size,
+                'do_sample': True,
+                'condition_on_prev_tokens': True,
+                'temperature': 0.1,
+            }
+
 
     def load_model(self, graph_compile=False):
         model_id = f"openai/whisper-{self.model_name}"
@@ -83,17 +95,7 @@ class BatchedTransformerWhisper(WhisperMultipleFile):
 
     def transcribe_batch(self, audio_urls, language=None, params=None):
         if params is None:
-            params = {
-                'task': 'transcribe',
-                'language': language or self.language,
-                'is_multilingual': True,
-                'return_timestamps': True,
-                'return_segments': True,
-                'num_beams': self.beam_size,
-                'do_sample': True,
-                'condition_on_prev_tokens': True,
-                'temperature': 0.1,
-            }
+            params = self.default_params
 
         raw_audio_data = []
         for url in audio_urls:
