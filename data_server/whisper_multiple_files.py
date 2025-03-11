@@ -8,6 +8,7 @@ import torch
 import io
 from scipy.io.wavfile import read as wav_read
 import json
+import copy
 
 class WhisperMultipleFile(abc.ABC):
     '''Base class for Whisper implementations that work on multiple files.'''
@@ -52,7 +53,7 @@ class BatchedTransformerWhisper(WhisperMultipleFile):
                 'num_beams': beam_size,
                 'do_sample': True,
                 'condition_on_prev_tokens': True,
-                'temperature': 0.1,
+                'temperature': 0.7,
             }
 
 
@@ -75,7 +76,7 @@ class BatchedTransformerWhisper(WhisperMultipleFile):
                 .output('pipe:', format='wav', acodec='pcm_s16le', ac=1, ar='16k')
                 .run(capture_stdout=True, capture_stderr=True)
             )
-            return out
+            return np.frombuffer(out, np.int16).flatten().astype(np.float32) / 32768.0
         except ffmpeg.Error as e:
             print("FFmpeg error occurred:", e.stderr.decode('utf-8'))
             return None
@@ -93,19 +94,21 @@ class BatchedTransformerWhisper(WhisperMultipleFile):
             batch_list.append(segments_list)
         return batch_list
 
-    def transcribe_batch(self, audio_urls, language=None, params=None):
+    def transcribe_batch(self, audio_urls, runs=1, language=None, params=None):
         if params is None:
-            params = self.default_params
+            params = copy.deepcopy(self.default_params)
 
         raw_audio_data = []
         for url in audio_urls:
             audio_data = self.convert_audio_in_memory(url)
-            if audio_data:
-                rate, data = wav_read(io.BytesIO(audio_data))
-                raw_audio_data.append(data.astype(np.float32))
-            else:
-                # Handle error in conversion by appending empty array
-                raw_audio_data.append(np.array([])) 
+            raw_audio_data.append(audio_data)
+            #if audio_data:
+            #    rate, data = wav_read(io.BytesIO(audio_data))
+            #    #raw_audio_data.append(data.astype(np.float32) / 32767.0)
+            #    raw_audio_data.append(data.astype(np.float32))
+            #else:
+            #    # Handle error in conversion by appending empty array
+            #    raw_audio_data.append(np.array([])) 
 
         # see https://github.com/huggingface/transformers/blob/main/src/transformers/models/whisper/feature_extraction_whisper.py
         # make sure to not truncate the input audio + to return the `attention_mask` and to pad to the longest audio
@@ -116,6 +119,7 @@ class BatchedTransformerWhisper(WhisperMultipleFile):
                                 truncation=False,
                                 sampling_rate=16000)
 
+        multi_run_transcriptions = []
 
         if inputs.input_features.shape[-1] <= 3000:
             # we in-fact have short-form ASR (less than 30s) -> pre-process accordingly
@@ -128,15 +132,24 @@ class BatchedTransformerWhisper(WhisperMultipleFile):
         # also convert inputs to 16 bit floats
         inputs = inputs.to(self.device, torch.float16)
 
-        # Start transcription on the batch
-        # see https://github.com/huggingface/transformers/blob/main/src/transformers/models/whisper/generation_whisper.py
-        results = self.model.generate(**inputs, **params)
+        for i in range(runs):
+            print('run',i)
+            # Start transcription on the batch
+            # see https://github.com/huggingface/transformers/blob/main/src/transformers/models/whisper/generation_whisper.py
+            results = self.model.generate(**inputs, **params)
 
-        with open('transformer_whisper_debug_output.json', 'w') as file:
-            json.dump(results, file, indent=4, default=self.default_converter)
+            with open('transformer_whisper_debug_output.json', 'w') as file:
+                json.dump(results, file, indent=4, default=self.default_converter)
 
-        transcriptions = self.get_transcript_segments(results)
-        return transcriptions
+            transcriptions = self.get_transcript_segments(results)
+            multi_run_transcriptions.append(transcriptions)
+            if runs > 1:
+                params['temperature']+=0.1
+
+        if runs == 1:
+            return transcriptions
+        else:
+            return multi_run_transcriptions
 
     def write_vtt_batch(self, transcriptions, file_paths):
         for transcription, file_path in zip(transcriptions, file_paths):
