@@ -162,7 +162,13 @@ def parse_and_download(feed_url):
 
                 print('Downloading to:', cache_file)
                 print('Cache file will be available at:', cache_url)
-                subprocess.run(["wget","--no-check-certificate", "-O", cache_file, audiolink], check=True)
+
+                subprocess.run([
+                    "wget", "--no-check-certificate", "--max-redirect=15", 
+                    "--retry-connrefused", "--tries=5", "-O", cache_file, audiolink
+                ], check=True)
+
+                #subprocess.run(["wget","--no-check-certificate", "-O", cache_file, audiolink], check=True)
                 # If wget is not available, you could use the Python package wget:
                 # wget.download(audiolink, out=cache_file, bar=wget.bar_thermometer)
                 print('Downloaded file:', cache_file)
