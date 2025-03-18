@@ -4,94 +4,97 @@ import sys
 import argparse
 import torch
 import numpy as np
-import whisper
-from faster_whisper import WhisperModel, BatchedInferencePipeline
 import io
 import time
 from utils import load_config
-
 from whisper.utils import format_timestamp
-
 from typing import Iterator, TextIO
 
-# The write_vtt function was replaced in whisper, its a bit annoying
-# this is the old version, copied from a previous version of whisper
-# see https://github.com/openai/whisper/commit/da600abd2b296a5450770b872c3765d0a5a5c769
-def write_vtt(transcript: Iterator[dict], file: TextIO, fast_whisper=False):
-    print("WEBVTT\n", file=file)
-    for segment in transcript:
-        if fast_whisper:
-            # make faster-whisper output compatible with OG whisper
-            segment = {"start": segment.start, "end": segment.end, "text": segment.text}
-        print(segment)
-        print(
-            f"{format_timestamp(segment['start'])} --> {format_timestamp(segment['end'])}\n"
-            f"{segment['text'].strip().replace('-->', '->')}\n",
-            file=file,
-            flush=True,
-        )
+from whisper_single_file import WhisperOriginal, FasterWhisper, WhisperX, WhisperCpp
+from whisper_multiple_files import BatchedTransformerWhisper
+
+podcast_initial_prompts = {
+    'en': 'Podcast author: {}, podcast title: {}',
+    'de': 'Podcast-Autor: {}, Podcast-Titel: {}',
+    'fr': 'Auteur du podcast : {}, Titre du podcast : {}',
+    'pl': 'Autor podcastu: {}, Tytuł podcastu: {}',
+    'es': 'Autor del podcast: {}, Título del podcast: {}',
+    'it': 'Autore del podcast: {}, Titolo del podcast: {}',
+    'nl': 'Podcast auteur: {}, Podcast titel: {}',
+    'sv': 'Podcastens författare: {}, Podcastens titel: {}',
+    'da': 'Podcast forfatter: {}, Podcast titel: {}',
+    'fi': 'Podcastin tekijä: {}, Podcastin otsikko: {}',
+    'no': 'Podkast forfatter: {}, Podkast tittel: {}',
+    'pt': 'Autor do podcast: {}, Título do podcast: {}',
+    'ru': 'Автор подкаста: {}, Название подкаста: {}',
+    'cs': 'Autor podcastu: {}, Název podcastu: {}',
+    'hu': 'Podcast szerző: {}, Podcast címe: {}',
+    'ro': 'Autor podcast: {}, Titlu podcast: {}',
+    'bg': 'Автор на подкаст: {}, Заглавие на подкаст: {}',
+    'el': 'Συγγραφέας podcast: {}, Τίτλος podcast: {}',
+    'tr': 'Podcast yazarı: {}, Podcast başlığı: {}'
+}
 
 def cancel_work(server, secret_api_key, wid, api_version='apiv1'):
     """ Cancels the work in progress for one task on the server. """
     print(f'Trying to cancel {wid}...')
     cancel_work = f'{server}/{api_version}/cancel_work/{wid}/{secret_api_key}'
-
     resp = requests.get(url=cancel_work)
     data = resp.json()
     assert(data['success'] == True)
 
-    return
-
 def cancel_work_batch(server, api_secret_key, wids, api_version='apiv1'):
     """ Cancels the work in progress for a batch of tasks on the server. """
-    print(f'Trying to cancel {wid}...')
+    print(f'Trying to cancel {wids}...')
     cancel_url = f'{server}/{api_version}/cancel_work_batch/{api_secret_key}'
-    
     resp = requests.post(cancel_url, json={'wids': wids})
     data = resp.json()
     print('Cancelled work in progress:', data)
-
     return data
 
-def transcribe_loop(server, language, secret_api_key, model='small', api_version='apiv1', fast_whisper=True):
-    print(f'Loading whisper model {model}')
+def transcribe_loop(server, language, secret_api_key, model='small', api_version='apiv1', implementation='original', beam_size=5, use_local_url=False):
+    print(f'Loading whisper model {model} with {implementation} implementation')
 
-    if fast_whisper:
-        model = WhisperModel(model, device="cuda", compute_type="float16")
-        batched_model = BatchedInferencePipeline(model=model)
+    # Initialize the selected transcription implementation
+    # Abstraction classes for major whisper implementations can be found in whisper_single_file.py
+    # Note: original implementation is still recommended for long-form transcription for the time being,
+    # as all the other faster implementation seem to struggle a lot more with
+    # hallucinations.
+
+    if implementation == 'original':
+        transcriber = WhisperOriginal(beam_size=beam_size)
+    elif implementation == 'faster':
+        transcriber = FasterWhisper(beam_size=beam_size)
+    elif implementation == 'X':
+        transcriber = WhisperX(beam_size=beam_size)
+    elif implementation == 'cpp':
+        transcriber = WhisperCpp(beam_size=beam_size)
     else:
-        model = whisper.load_model(model)
-    print('Done')
+        raise NotImplementedError("Not implemented:", implementation)
 
+    transcriber.load_model()
     get_work_url = f'{server}/{api_version}/get_work/{language}/{secret_api_key}'
     print(f'{get_work_url=}')
+
     while True:
         wip = False
         try:
             # Step 1) Get a url to transcribe from the transcription server
-
             resp = requests.get(url=get_work_url)
+            print('server response:', resp)
             data = resp.json()
-
             assert(data['transcript_file'] == '')
             assert(data['cache_audio_url'] != '')
             assert(data['success'] == True)
 
-            # Title is later used as inital prompt.
-            # It has to be None, if there is no title.
-            title = None
-            if 'episode_title' in data:
-                title = data['episode_title']
-                if title == '':
-                    title = None
-
-            author = None
-            if 'authors' in data:
-                author = data['authors']
-                if author == '':
-                    author = None
+            title = data.get('episode_title') or None
+            author = data.get('authors') or None
 
             url = data['cache_audio_url']
+            if use_local_url:
+                assert(data['local_cache_audio_url'] != '')
+                url = data['local_cache_audio_url']
+
             wid = data['wid']
 
             print('New job:', data)
@@ -99,75 +102,50 @@ def transcribe_loop(server, language, secret_api_key, model='small', api_version
 
             # Step 2) Confirm we are taking the job
             confirm_work_url = f'{server}/{api_version}/register_wip/{wid}/{secret_api_key}'
-            
             print(f'{confirm_work_url=}')
-
             resp = requests.get(url=confirm_work_url)
             data = resp.json()
             print('Confirmed:', data)
             assert(data['success'] == True)
             wip = True
 
-            # Step 3) Use whisper (faster-whisper) to transcribe and obtain a vtt.
-            # Provide author and title as additional information (prompt).
- 
-            prompt = f'Author: {author}, Title: {title}'
+            # Generate the prompt based on the language, defaulting to English if the language code is not found
+            prompt = podcast_initial_prompts.get(language, podcast_initial_prompts['en']).format(author, title) if author or title else ''
 
             if prompt[-1] == '\n':
                 prompt = prompt[:-1]
 
-            if not (prompt[-1] == '.' or prompt[-1] == '!' or prompt[-1] == '?'):
+            if prompt and prompt[-1] not in '.!?':
                 prompt += '.'
-
             prompt += '\n'
 
-            model_beam_size = 3
-            bs = model_beam_size
-
-            if fast_whisper:
-                print('Transcribing with fast whisper...')
-                print('Prompt:', prompt)
-                # If vad filter=False, we get: No clip timestamps found. Set 'vad_filter' to True or provide 'clip_timestamps'.
-                # Looks like condition on previous text is also ignored
-                segments, info = batched_model.transcribe(url, vad_filter=True, language=language, task='transcribe', temperature=(0.0, 0.2, 0.4, 0.6, 0.8, 1.0), best_of=bs, beam_size=bs, condition_on_previous_text=True, initial_prompt=prompt, batch_size=8)
-                # OG whisper compatibility
-                result = {'segments': list(segments), 'language': info.language}
-            else:
-                # There might be a bug in whisper where the default of the the command line process doesn't match the defaults of the transcribe function, the parameters below replicate the command line defaults
-                print('Transcribing with whisper...')
-                result = model.transcribe(url, language=language, task='transcribe', temperature=(0.0, 0.2, 0.4, 0.6, 0.8, 1.0), best_of=bs, beam_size=bs, suppress_tokens="-1", condition_on_previous_text=True, fp16=True, compression_ratio_threshold=2.4, logprob_threshold=-1., no_speech_threshold=0.6)
-           
+            # Step 3) Use whisper to transcribe and obtain a vtt.
+            # Provide author and title as additional information (prompt).
+            print('Transcribing with prompt:', prompt)
+            result = transcriber.transcribe(url, language=language, duration=-1, initial_prompt = prompt)
             print('Done!')
 
-            print('model reported language:', result['language'])
+            print('Model reported language:', result['language'])
             assert(result['language'] == language)
 
             fi = io.StringIO('')
-            write_vtt(result['segments'], file=fi, fast_whisper=fast_whisper)
-
+            transcriber.write_vtt(result, file=fi)
             fi.seek(0)
 
             # Step 4) Upload vtt and close the memory StringIO file
             files = {'file': fi}
-
-            # Add the model name as part of the request payload
-            data = {'model': f'fwhisper_fp16_bs{bs}' if fast_whisper else f'whisper_fp16_bs{bs}'}
-
+            data = {'model': f'{implementation}_bs{beam_size}'}
             upload_url = f'{server}/{api_version}/upload_result/{wid}/{secret_api_key}'
             print(f"{upload_url=}")
 
-            # Include 'data' with the POST request
             resp = requests.post(upload_url, files=files, data=data)
-
-            # Parse and check the response
             data = resp.json()
             assert(data['success'] == True)
 
+            # Cleanup, just making sure data doesnt get mixed up in the next iteration
             wip = False
             vtt_str = fi.read()
             fi.close()
-
-            # Cleanup, just making sure data doesnt get mixed up in the next iteration
             del fi
             del result
 
@@ -178,7 +156,6 @@ def transcribe_loop(server, language, secret_api_key, model='small', api_version
             if wip:
                 print('Canceled with work in progress:', wid)
                 cancel_work(server, secret_api_key, wid, api_version)
-
             sys.exit(-10)
 
         except Exception as e:
@@ -187,10 +164,7 @@ def transcribe_loop(server, language, secret_api_key, model='small', api_version
             if wip:
                 print('Canceled with work in progress:', wid)
                 cancel_work(server, secret_api_key, wid, api_version)
-
             time.sleep(30)
-
-    return
 
 def upload_results_batch(server, api_version, secret_api_key, wids, results):
     """Uploads transcription results for a batch of work items."""
@@ -210,7 +184,6 @@ def upload_results_batch(server, api_version, secret_api_key, wids, results):
 
     # POST request with files and data
     response = requests.post(upload_url, files=files, data=data)
-    # Closing all StringIO objects
     for _, file_tuple in files:
         file_tuple[1].close()
 
@@ -226,27 +199,23 @@ def register_wip_batch(server, api_version, secret_api_key, wids):
     :param wids: List of work item IDs (wids) that are to be registered.
     :return: JSON response from the server indicating success or failure.
     """
+
     url = f"{server}/{api_version}/register_wip_batch/{secret_api_key}"
-    payload = {'wids': wids}  # Payload containing the list of work IDs
-    response = requests.post(url, json=payload)  # Sending a POST request with the payload as JSON
+    payload = {'wids': wids} # Payload containing the list of work IDs
+    response = requests.post(url, json=payload)
 
     if response.status_code == 200:
-        return response.json()  # Return the JSON response if request was successful
+        return response.json()
     else:
         # In case of a non-200 response, log and return an error message
         print(f"Failed to register work in progress. Status Code: {response.status_code}, Response: {response.text}")
         return {'success': False, 'error': 'Failed to register work in progress with the server.'}
 
+def transcribe_loop_batch(server, language, secret_api_key, model='small', api_version='apiv1', batch_size=5, beam_size=5):
+    print(f"Loading Whisper model {model} with batched_transformer implementation")
 
-def transcribe_loop_batch(server, language, secret_api_key, model='small', api_version='apiv1', batch_size=5):
-    from transformers import AutoProcessor, WhisperForConditionalGeneration
-    from datasets import load_dataset, Audio
-
-    print(f"Loading Whisper model {model}")
-    processor = AutoProcessor.from_pretrained(f"openai/whisper-{model}.en")
-    whisper_model = WhisperForConditionalGeneration.from_pretrained(f"openai/whisper-{model}.en", torch_dtype=torch.float16)
-    whisper_model.to("cuda")
-
+    transcriber = BatchedTransformerWhisper(beam_size=beam_size)
+    transcriber.load_model()
     get_work_url = f'{server}/{api_version}/get_work_batch/{language}/{secret_api_key}/{batch_size}'
     print(f'URL for getting work: {get_work_url}')
 
@@ -268,27 +237,25 @@ def transcribe_loop_batch(server, language, secret_api_key, model='small', api_v
             print('Fetched new batch of jobs:', wids)
 
             # Step 2: Register work in progress for the fetched batch
-            register_response = register_wip_batch(wids)
+            register_response = register_wip_batch(server, api_version, secret_api_key, wids)
             if not register_response['success']:
                 print("Failed to register work in progress:", register_response)
                 continue
 
             print('Batch registered:', register_response)
 
-            # Transcription
-            ds = load_dataset("text", data_files=urls)["train"]
-            ds = ds.cast_column("audio", Audio(sampling_rate=16000))
-
-            raw_audio = [x["array"].astype(np.float32) for x in ds["audio"]]
-            inputs = processor(raw_audio, return_tensors="pt", padding="longest", return_attention_mask=True, sampling_rate=16000)
-            inputs = inputs.to("cuda", torch.float16)
-
-            # Transcribe
-            results = whisper_model.generate(**inputs, condition_on_prev_tokens=True, temperature=(0.0, 0.2, 0.4, 0.6, 0.8, 1.0), return_timestamps=True)
-            decoded_results = processor.batch_decode(results, skip_special_tokens=True)
+            # Step 3: Transcribe batch
+            results = transcriber.transcribe_batch(urls, language=language)
+            vtt_results = []
+            for result in results:
+                fi = io.StringIO('')
+                transcriber.write_vtt(result['segments'], file=fi)
+                fi.seek(0)
+                vtt_results.append(fi.getvalue())
+                fi.close()
 
             # Step 4: Upload results
-            upload_results_batch(server, api_version, secret_api_key, wids, decoded_results)
+            upload_results_batch(server, api_version, secret_api_key, wids, vtt_results)
             wip = False
 
         except KeyboardInterrupt:
@@ -306,19 +273,28 @@ def transcribe_loop_batch(server, language, secret_api_key, model='small', api_v
                 cancel_work_batch(server, secret_api_key, wids, api_version)
             time.sleep(30)
 
-
 if __name__ == '__main__':
     config = load_config()
-    default_lang = 'de'
+    default_lang = 'en'
+    default_beam_size = 5
 
     if 'podcast_language' in config:
         default_lang = config['podcast_language']
 
+    server_api_url = config.get('server_api_url', "http://mini1.local:5562/apiv1/")
+    server_url, api_version = server_api_url.rstrip('/').rsplit('/', 1)
+
     parser = argparse.ArgumentParser(description='Worker that uses whisper to transcribe')
-    parser.add_argument('-s', '--server-address', default='https://speechcatcher.net/', dest='server', help='Server address to connect to.')
-    parser.add_argument('-l', '--language', default='de', dest='language', help='Language (used in the queries to the server).')
-    parser.add_argument('--debug', dest='debug', help='Start with debugging enabled',
-                                                    action='store_true', default=False)
+    parser.add_argument('-s', '--server-address', default=server_url, dest='server', help=f'Server address to connect to. Default: {server_url}')
+    parser.add_argument('-l', '--language', default=default_lang, dest='language', help=f'Language (used in the queries to the server). Default: {default_lang}')
+    parser.add_argument('--debug', dest='debug', help='Start with debugging enabled', action='store_true', default=False)
+    parser.add_argument('--implementation', choices=['original', 'faster', 'X', 'batched_transformer', 'cpp'], default='original', help='Select the whisper implementation to use. Default: original')
+    parser.add_argument('--beam-size', type=int, default=default_beam_size, help=f'Decoding beam size. Default: {default_beam_size}')
+    parser.add_argument('--api-version', default=api_version, help=f'API version to use. Default: {api_version}')
+    parser.add_argument('--use_local_url', dest='use_local_url', help='Use local LAN URL instead of global internet URL.', action='store_true', default=False)
     args = parser.parse_args()
 
-    transcribe_loop(args.server, args.language, config['secret_api_key'], model = config['whisper_model']) 
+    if args.implementation == 'batched_transformer':
+        transcribe_loop_batch(args.server, args.language, config['secret_api_key'], model=config['whisper_model'], api_version=args.api_version, beam_size=args.beam_size)
+    else:
+        transcribe_loop(args.server, args.language, config['secret_api_key'], model=config['whisper_model'], implementation=args.implementation, api_version=args.api_version, beam_size=args.beam_size, use_local_url=args.use_local_url)
