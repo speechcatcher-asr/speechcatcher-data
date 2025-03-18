@@ -162,18 +162,24 @@ def parse_and_download(feed_url):
 
                 print('Downloading to:', cache_file)
                 print('Cache file will be available at:', cache_url)
-                subprocess.run(["wget","--no-check-certificate", "-O", cache_file, audiolink], check=True)
-                # If wget is not available, you could use the Python package wget:
-                # wget.download(audiolink, out=cache_file, bar=wget.bar_thermometer)
-                print('Downloaded file:', cache_file)
-                print()
 
-                sql = "INSERT INTO podcasts(podcast_title, episode_title, published_date, retrieval_time, authors, language, description, keywords, episode_url, episode_audio_url," \
-                  " cache_audio_url, cache_audio_file, transcript_file, duration, type, episode_json, model) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)"
-                p_cursor.execute(sql, (podcast_title, episode_title, published, str(retrieval_time), authors, language, desc, joined_tags, link, audiolink, cache_url, cache_file, transcript_file, str(duration), mytype, episode_json, model_name))
-                p_connection.commit()
+                subprocess.run([
+                    "wget", "--no-check-certificate", "--max-redirect=15", 
+                    "--retry-connrefused", "--tries=5", "-O", cache_file, audiolink
+                ], check=True)
 
-                print("SUCCESS")
+                if os.path.exists(cache_file) and os.path.getsize(cache_file) > 0:
+                    file_size_mb = os.path.getsize(cache_file) / (1024 * 1024)
+                    print(f'Downloaded file: {cache_file} ({file_size_mb:.2f} MB)')
+
+                    sql = "INSERT INTO podcasts(podcast_title, episode_title, published_date, retrieval_time, authors, language, description, keywords, episode_url, episode_audio_url," \
+                      " cache_audio_url, cache_audio_file, transcript_file, duration, type, episode_json, model) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)"
+                    p_cursor.execute(sql, (podcast_title, episode_title, published, str(retrieval_time), authors, language, desc, joined_tags, link, audiolink, cache_url, cache_file, transcript_file, str(duration), mytype, episode_json, model_name))
+                    p_connection.commit()
+
+                    print("SUCCESS")
+                else:
+                    print('Error: Downloaded file is empty or does not exist:', cache_file)
             except:
                 print('Error occured while trying to download:', audiolink)
                 traceback.print_exc()
@@ -204,4 +210,9 @@ if __name__ == "__main__":
     for feed_url in rss_feeds_in_list:
         print('Downloading from:', feed_url)
         time.sleep(1)
-        parse_and_download(feed_url)
+        try:
+            parse_and_download(feed_url)
+        except:
+            print('Global and unexpected error occured while trying to process feed:', feed_url)
+            traceback.print_exc()
+            print('Warning: will ignore entire feed!')

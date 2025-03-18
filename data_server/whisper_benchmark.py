@@ -5,6 +5,10 @@ import subprocess
 import requests
 import re
 import jiwer
+
+import numpy as np
+import matplotlib.pyplot as plt
+
 from whisper_single_file import WhisperOriginal, FasterWhisper, WhisperX
 from whisper_multiple_files import BatchedTransformerWhisper
 from utils import load_config
@@ -112,7 +116,7 @@ def main():
     parser.add_argument('--batch_size', type=int, default=4, help='Number of audio files to process in a batch')
     parser.add_argument('--beam_size', type=int, default=5, help='Decoding beam size')
     parser.add_argument('--min_duration', type=float, default=280.0, help='Minimum duration of audio files in seconds')
-    parser.add_argument('--implementation', choices=['original', 'faster', 'X', 'batched_transformer'], default='original', help='Select the whisper implementation to use')
+    parser.add_argument('--implementation', choices=['original', 'faster', 'X', 'batched_transformer'], default='batched_transformer', help='Select the whisper implementation to use')
     parser.add_argument('--force-cli-reference-rerun', action='store_true', help='Force rerun of Whisper CLI for reference transcriptions even if they exist')
     args = parser.parse_args()
 
@@ -152,34 +156,79 @@ def main():
     cers = []
     total_audio_duration = 0.  # in seconds
     total_processing_time = 0.  # in seconds
+    do_plot = False
 
     if args.implementation == 'batched_transformer':
         # Transcribe the entire batch at once
         start_time = time.time()
         audio_urls_list = [url for url, _ in audio_urls]
-        transcriptions = transcriber.transcribe_batch(audio_urls_list, language=args.language)
+        runs = 1
+        
+        if runs > 1:
+            do_plot = True
+        
+        multi_transcriptions = transcriber.transcribe_batch(audio_urls_list, language=args.language, runs=runs)
         total_processing_time = time.time() - start_time
 
-        for (audio_url, duration), transcription in zip(audio_urls, transcriptions):
-            total_audio_duration += duration
-            filename = os.path.splitext(os.path.basename(audio_url))[0] + '.vtt'
-            file_path = os.path.join(implementation_dir, filename)
-            with open(file_path, 'w') as file_out:
-                transcriber.write_vtt(transcription, file_out)
+        results = {}
 
-            # Transcribe with CLI for reference
-            reference_file_path = os.path.join(reference_dir, filename)
-            if args.force_cli_reference_rerun or not os.path.exists(reference_file_path):
-                transcribe_with_cli(audio_url, reference_dir)
-            else:
-                print(f'Not overwriting {reference_file_path} with Whisper CLI since it already exists.'
-                      'You can force to redo the reference transcription with --force-cli-reference-rerun.')
+        if runs==1:
+            multi_transcriptions = [multi_transcriptions]
 
-            # Calculate WER and CER using extracted text
-            wer, cer = calculate_wer_cer(reference_file_path, file_path)
-            print('WER and CER is:', wer, cer)
-            wers.append(wer)
-            cers.append(cer)
+        for i,transcriptions in enumerate(multi_transcriptions):
+            for (audio_url, duration), transcription in zip(audio_urls, transcriptions):
+                total_audio_duration += duration
+                filename = os.path.splitext(os.path.basename(audio_url))[0] + '.vtt'
+                multi_filename = os.path.splitext(os.path.basename(audio_url))[0] + '.' + str(i) + '.vtt'
+
+                file_path = os.path.join(implementation_dir, multi_filename)
+
+                with open(file_path, 'w') as file_out:
+                    transcriber.write_vtt(transcription, file_out)
+
+                # Transcribe with CLI for reference
+                reference_file_path = os.path.join(reference_dir, filename)
+                if args.force_cli_reference_rerun or not os.path.exists(reference_file_path):
+                    transcribe_with_cli(audio_url, reference_dir)
+                else:
+                    if i==0:
+                        print(f'Not overwriting {reference_file_path} with Whisper CLI since it already exists.'
+                          'You can force to redo the reference transcription with --force-cli-reference-rerun.')
+    
+                # Calculate WER and CER using extracted text
+                wer, cer = calculate_wer_cer(reference_file_path, file_path)
+                print(f'[run {i}] WER and CER is:', wer, cer)
+                wers.append(wer)
+                cers.append(cer)
+
+                # Collecting data for plotting
+                file_key = os.path.basename(audio_url)
+                if file_key not in results:
+                    results[file_key] = {'wer': [], 'cer': []}
+                results[file_key]['wer'].append(wer)
+                results[file_key]['cer'].append(cer)
+
+        if do_plot:
+            plt.figure(figsize=(12, 6))
+            colors = plt.cm.tab10.colors
+
+            for idx, (file, metrics) in enumerate(results.items()):
+                plt.plot(range(runs), metrics['wer'], label=f'{file[:20]} WER', marker='o', color=colors[idx % len(colors)])
+                plt.plot(range(runs), metrics['cer'], label=f'{file[:20]} CER', marker='x', linestyle='--', color=colors[idx % len(colors)])
+
+            plt.title('WER and CER across runs for each file')
+            plt.xlabel('Run')
+            plt.ylabel('Error Rate')
+            plt.xticks(range(runs))
+            plt.ylim(bottom=0)
+            plt.grid(True)
+            plt.legend()
+            plt.tight_layout()
+
+            plot_filename = f'benchmark_{int(time.time())}.pdf'
+            plt.savefig(plot_filename)
+            print(f'Plot saved to {plot_filename}')
+
     else:
         # Transcribe each file individually
         for audio_url, duration in audio_urls:
