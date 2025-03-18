@@ -119,7 +119,7 @@ def get_every_episode_list(api_access_key):
 # Samples a new untranscribed episode from the db and sends the result as JSON
 # to have more diversity early on, we first sample an author and then a random episode from that author
 # this helps to not over sample from the authors with the most episodes early on
-@app.route('/api/v1/get_work/<language>/<api_access_key>', methods=['GET'])
+@app.route(api_version + '/get_work/<language>/<api_access_key>', methods=['GET'])
 def get_work(language, api_access_key):
     # Security check for API access key
     if api_secret_key != api_access_key:
