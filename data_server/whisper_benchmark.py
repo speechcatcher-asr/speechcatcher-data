@@ -9,7 +9,7 @@ import jiwer
 import numpy as np
 import matplotlib.pyplot as plt
 
-from whisper_single_file import WhisperOriginal, FasterWhisper, WhisperX
+from whisper_single_file import WhisperOriginal, FasterWhisper, WhisperX, WhisperCpp
 from whisper_multiple_files import BatchedTransformerWhisper
 from utils import load_config
 
@@ -120,7 +120,7 @@ def main():
     parser.add_argument('--batch_size', type=int, default=4, help='Number of audio files to process in a batch')
     parser.add_argument('--beam_size', type=int, default=5, help='Decoding beam size')
     parser.add_argument('--min_duration', type=float, default=280.0, help='Minimum duration of audio files in seconds')
-    parser.add_argument('--implementation', choices=['original', 'faster', 'X', 'batched_transformer'], default='batched_transformer', help='Select the whisper implementation to use')
+    parser.add_argument('--implementation', choices=['original', 'faster', 'X', 'batched_transformer', 'cpp'], default='original', help='Select the whisper implementation to use')
     parser.add_argument('--force-cli-reference-rerun', action='store_true', help='Force rerun of Whisper CLI for reference transcriptions even if they exist')
     args = parser.parse_args()
 
