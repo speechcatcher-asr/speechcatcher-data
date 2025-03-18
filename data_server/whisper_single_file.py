@@ -2,6 +2,7 @@ import whisper
 import whisperx
 from faster_whisper import WhisperModel, BatchedInferencePipeline
 import io
+from pywhispercpp.model import Model
 
 class WhisperSingleFile:
     '''Base class for Whisper implementations that work operate on single files.'''
@@ -131,6 +132,47 @@ class WhisperX(FasterWhisper):
         result = self.model.transcribe(audio, **params)
         segments, info = result
         return {'segments': list(segments), 'language': info.language}
+
+    def write_vtt(self, result, file):
+        print("WEBVTT\n", file=file)
+        for segment in result['segments']:
+            print(
+                f"{whisper.utils.format_timestamp(segment.start)} --> {whisper.utils.format_timestamp(segment.end)}\n"
+                f"{segment.text.strip().replace('-->', '->')}\n",
+                file=file,
+                flush=True,
+            )
+
+
+class WhisperCpp(WhisperSingleFile):
+    '''A speechcatcher-data abstraction for pywhispercpp'''
+    def __init__(self, model_name='large-v3', device='cuda', language='english', beam_size=5):
+        super().__init__(model_name, device, language, beam_size)
+        # Remove arguments that are unsupported by this implementation
+        del self.default_params['fp16']
+        del self.default_params['logprob_threshold']
+        del self.default_params['suppress_tokens']
+        del self.default_params['condition_on_previous_text']
+        del self.default_params['compression_ratio_threshold']
+        del self.default_params['no_speech_threshold']
+        del self.default_params['best_of']
+        # Add arguments that are specific to this implementation
+        self.default_params['print_realtime'] = False
+        self.default_params['print_progress'] = False
+
+    def load_model(self):
+        self.model = Model(self.model_name, device=self.device)
+
+    def transcribe(self, url, language=None, duration=-1, params=None):
+        if params is None:
+            params = self.default_params
+        if language is not None:
+            params['language'] = language
+        print('Running single-file transcription with pywhispercpp implementation on:', url)
+        print('Beam size is:', params.get('beam_size', 'Not applicable'))
+
+        segments = self.model.transcribe(url, **params)
+        return {'segments': list(segments), 'language': language}
 
     def write_vtt(self, result, file):
         print("WEBVTT\n", file=file)
