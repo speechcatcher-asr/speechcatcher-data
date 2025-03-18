@@ -46,14 +46,18 @@ def fetch_batch(language, n, min_duration):
         print("Failed to fetch batch:", response.text)
         return []
 
-def transcribe_with_cli(audio_url, output_path):
+def transcribe_with_cli(audio_url, output_path, language='en'):
     cmd = [
         "whisper",
         "--model", "large-v3",
         "--output_dir", output_path,
+        "--language", language,
         "--output_format", "vtt",
         audio_url
     ]
+
+    print('Transcribe with CLI cmd:', cmd)
+
     subprocess.run(cmd, check=True)
 
 def extract_text_from_vtt(vtt_content):
@@ -145,6 +149,8 @@ def main():
         transcriber = WhisperX(beam_size=args.beam_size)
     elif args.implementation == 'batched_transformer':
         transcriber = BatchedTransformerWhisper(beam_size=args.beam_size)
+    elif args.implementation == 'cpp':
+        transcriber = WhisperCpp(beam_size=args.beam_size)
     else:
         raise NotImplementedError("Not implemented:", args.implementation)
 
@@ -189,7 +195,7 @@ def main():
                 # Transcribe with CLI for reference
                 reference_file_path = os.path.join(reference_dir, filename)
                 if args.force_cli_reference_rerun or not os.path.exists(reference_file_path):
-                    transcribe_with_cli(audio_url, reference_dir)
+                    transcribe_with_cli(audio_url, reference_dir, language=args.language)
                 else:
                     if i==0:
                         print(f'Not overwriting {reference_file_path} with Whisper CLI since it already exists.'
@@ -246,7 +252,7 @@ def main():
             # Transcribe with CLI for reference
             reference_file_path = os.path.join(reference_dir, filename)
             if args.force_cli_reference_rerun or not os.path.exists(reference_file_path):
-                transcribe_with_cli(audio_url, reference_dir)
+                transcribe_with_cli(audio_url, reference_dir, language=args.language)
             else:
                 print(f'Not overwriting {reference_file_path} with Whisper CLI since it already exists.'
                       'You can force to redo the reference transcription with --force-cli-reference-rerun.')
