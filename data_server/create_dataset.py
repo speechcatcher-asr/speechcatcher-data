@@ -325,10 +325,6 @@ def process(server_api_url, api_secret_key, dev_n=10, test_n=10, test_dev_episod
     #print(dev_set)
     #print(test_set)
 
-    #dev_podcasts = []
-    #for elem in dev_set:
-    #    dev_podcasts += [process_podcast(server_api_url, api_secret_key, elem['title'], audio_dataset_location, replace_audio_dataset_location, change_audio_fileending)]
-
     # create dev set in parallel
     dev_podcasts = []
     with concurrent.futures.ProcessPoolExecutor() as executor:
@@ -350,38 +346,25 @@ def process(server_api_url, api_secret_key, dev_n=10, test_n=10, test_dev_episod
             result = future.result()
             test_podcasts.append(result)
 
-   # test_podcasts = []
-   # for elem in test_set:
-   #     test_podcasts += [process_podcast(server_api_url, api_secret_key, elem['title'], audio_dataset_location, replace_audio_dataset_location, change_audio_fileending)]
-
     write_kaldi_dataset(test_podcasts, 'data/test/')
 
     # create train set in parallel
-
     train_podcasts = []
 
     with concurrent.futures.ProcessPoolExecutor() as executor:
         podcast_futures = [executor.submit(process_podcast_wrapper, server_api_url, api_secret_key, elem['title'],
                            audio_dataset_location, replace_audio_dataset_location, change_audio_fileending) for elem in train_set]
-        #try:
-        for future in concurrent.futures.as_completed(podcast_futures):
-            podcast = future.result()
-            if podcast is not None:
-                train_podcasts.append(podcast)
-        #except KeyboardInterrupt:
-        #    print('User abort: Cancelling remaining tasks')
-        #    for future in podcast_futures:
-        #        future.cancel()
-        #    concurrent.futures.wait(podcast_futures)
-        #    sys.exit(-1)
-    #train_podcasts = []
-    #for elem in train_set:
-    #    try:
-    #        train_podcasts += [process_podcast(server_api_url, api_secret_key, elem['title'], audio_dataset_location, replace_audio_dataset_location, change_audio_fileending)]
-    #    except:
-    #        print('Warning: error in ', elem['title'], 'ignoring entire podcast...')
-    #        traceback.print_exc()
-    #        continue
+        try:
+            for future in concurrent.futures.as_completed(podcast_futures):
+                podcast = future.result()
+                if podcast is not None:
+                    train_podcasts.append(podcast)
+        except KeyboardInterrupt:
+            print('User abort: Cancelling remaining tasks')
+            for future in podcast_futures:
+                future.cancel()
+            concurrent.futures.wait(podcast_futures)
+            sys.exit(-1)
     write_kaldi_dataset(train_podcasts, 'data/train/')
 
 
@@ -405,4 +388,20 @@ if __name__ == '__main__':
     replace_audio_dataset_location = config["replace_audio_dataset_location"]
     change_audio_fileending = config["change_audio_fileending_to"]
     language = config["podcast_language"]
+
+    # Print configuration summary
+    print("\nConfiguration Summary:")
+    print(f"API Secret Key: {'*' * len(api_secret_key)} (hidden for security)")
+    print(f"Server API URL: {server_api_url}")
+    print(f"Audio Dataset Location: {audio_dataset_location}")
+    print(f"Replace Audio Dataset Location: {replace_audio_dataset_location}")
+    print(f"Change Audio File Ending To: {change_audio_fileending}")
+    print(f"Podcast Language: {language}")
+
+    # Confirm before proceeding
+    confirm = input("\nDo you want to proceed with dataset creation? (y/n): ").strip().lower()
+    if confirm != 'y':
+        print("Aborting dataset creation.")
+        sys.exit(-1)
+
     process(server_api_url, api_secret_key, args.dev_n, args.test_n, args.test_dev_episodes_threshold, language, audio_dataset_location, replace_audio_dataset_location, change_audio_fileending)
