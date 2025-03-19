@@ -151,7 +151,7 @@ def get_work(language, api_access_key):
                 WHERE transcript_file = %s AND language = %s AND authors = %s
                 ORDER BY RANDOM()
                 LIMIT 1
-            """, ('', language, author_record['authors']))
+            """, ('', language, author_record[0]))
             episode_record = p_cursor.fetchone()
             
             if episode_record:
