@@ -38,12 +38,10 @@ def get_file_count(cursor, condition):
     return cursor.fetchone()[0]
 
 def get_total_size(cursor, condition):
-    # Query to select the cache paths of the files
     query = f"SELECT cache_audio_file FROM {PODCAST_TABLE} WHERE {condition};"
     cursor.execute(query)
     files = cursor.fetchall()
 
-    # Calculate the total size of the files
     total_size = 0
     for file in files:
         file_path = file[0]
@@ -58,6 +56,14 @@ def get_distinct_authors(cursor, condition):
     query = f"SELECT COUNT(DISTINCT authors) FROM {PODCAST_TABLE} WHERE {condition};"
     cursor.execute(query)
     return cursor.fetchone()[0]
+
+def get_corrupted_file_count(cursor):
+    condition = "transcript_file LIKE '%/corrupted/%'"
+    return get_file_count(cursor, condition)
+
+def get_corrupted_hours(cursor):
+    condition = "transcript_file LIKE '%/corrupted/%'"
+    return get_hours(cursor, condition)
 
 def load_previous_stats():
     try:
@@ -92,7 +98,8 @@ def generate_duration_histogram(cursor, condition, output_file):
     plt.close()
 
 def generate_html(transcribed_hours, untranscribed_hours, inprogress_hours, transcribed_ratio, transcription_speed,
-                  total_files, total_size, distinct_authors, transcribed_files, transcribed_size, transcribed_authors):
+                  total_files, total_size, distinct_authors, transcribed_files, transcribed_size, transcribed_authors,
+                  corrupted_files, corrupted_hours):
     current_datetime = datetime.now().strftime("%m/%d/%Y, %H:%M:%S")
     return f'''
 <html>
@@ -153,6 +160,8 @@ def generate_html(transcribed_hours, untranscribed_hours, inprogress_hours, tran
         <p>Transcribed files: <strong>{transcribed_files}</strong></p>
         <p>Transcribed size: <strong>{transcribed_size/(1024.*1024.*1024.):.2f}</strong> GB</p>
         <p>Transcribed authors: <strong>{transcribed_authors}</strong></p>
+        <p>Possibly corrupted files: <strong>{corrupted_files}</strong></p>
+        <p>Possibly corrupted hours: <strong>{corrupted_hours:.2f}</strong></p>
         <p>Info queried at: <strong>{current_datetime}</strong></p>
     </div>
     <img src="duration_histogram.svg" alt="Duration Histogram">
@@ -182,8 +191,12 @@ def main():
         transcribed_size = get_total_size(cursor, "transcript_file <> '' AND transcript_file <> 'in_progress'")
         transcribed_authors = get_distinct_authors(cursor, "transcript_file <> '' AND transcript_file <> 'in_progress'")
 
+        corrupted_files = get_corrupted_file_count(cursor)
+        corrupted_hours = get_corrupted_hours(cursor)
+
         html_content = generate_html(transcribed_hours, untranscribed_hours, inprogress_hours, transcribed_ratio, transcription_speed,
-                                     total_files, total_size, distinct_authors, transcribed_files, transcribed_size, transcribed_authors)
+                                     total_files, total_size, distinct_authors, transcribed_files, transcribed_size, transcribed_authors,
+                                     corrupted_files, corrupted_hours)
 
         print('Time:', time.time())
 
