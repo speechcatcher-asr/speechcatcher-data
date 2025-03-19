@@ -11,6 +11,7 @@ import traceback
 import concurrent.futures
 import sys
 import os
+import json
 from utils import *
 
 # You can also use sox, but fileformats are more limited.
@@ -125,15 +126,16 @@ def write_kaldi_dataset(podcasts, dataset_dir, use_sox_str=True):
               utt2dur_file.write(f'{recording_id} {max_seconds}\n')
 
               for i, segment in enumerate(episode['segments']):
-                  start = timestamp_to_seconds_float(segment['start'])
-                  end = timestamp_to_seconds_float(segment['end'])
+                  #convert timestamps if nessecary
+                  start = segment['start'] if isinstance(segment['start'], float) else timestamp_to_seconds_float(segment['start'])
+                  end = segment['end'] if isinstance(segment['end'], float) else timestamp_to_seconds_float(segment['end'])
 
                   if start > max_seconds:
-                      print(f'Warning, overflow in vtt for start time stamp for {filename}... ignore and skip this and the following segments.')
+                      print(f'Warning, overflow in transcript for start time stamp for {filename}... ignore and skip this and the following segments.')
                       break
 
                   if end > max_seconds:
-                      print(f'Warning, overflow in vtt end time stamp for {filename}... trying to fix.')
+                      print(f'Warning, overflow in transcript end time stamp for {filename}... trying to fix.')
                       end = max_seconds
 
                   if end <= start:
@@ -196,10 +198,9 @@ def download_file(file_url):
     return response.text
 
 # Load and parse a JSON file to extract timestamps and text
-def parse_json_segments(json_file_path):
-    with open(json_file_path, 'r', encoding='utf-8') as f:
-        data = json.load(f)
-
+def parse_json_segments(json_content):
+    data = json.loads(json_content)
+    
     segments = []
     for segment in data.get("segments", []):
         segments.append({
@@ -264,6 +265,9 @@ def process_podcast(server_api_url, api_secret_key, title, audio_dataset_locatio
     episodes = []
 
     for episode in episode_list:
+        if 'episode_title' not in episode:
+            print('WARNING: Malformed episode (skipping):', episode)
+            continue
         try:
             print('parsing:', episode['episode_title'])
 
@@ -314,7 +318,7 @@ def process_podcast(server_api_url, api_secret_key, title, audio_dataset_locatio
 
             episodes.append(episode_copy)
         except:
-            print('Error processing episode:', episode['episode_title'],'skipping...')
+            print('Error processing episode:', episode, 'skipping...')
             traceback.print_exc()
 
     return {'title': title, 'episodes': episodes}
