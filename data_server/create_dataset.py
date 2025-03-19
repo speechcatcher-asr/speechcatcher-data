@@ -20,7 +20,7 @@ sox_str = '%s sox %s -t wav -r 16k -b 16 -e signed -c 1 - |\n'
 # With ffmpeg, the dataset can load any file and can convert it to 16kHz wav on-the-fly.
 sox_str = '%s ffmpeg -i "%s" -acodec pcm_s16le -ar 16000 -ac 1 -f wav - |\n'
 
-ex_file_path = 'exclusion_chars/de.txt' 
+ex_file_path = 'exclusion_chars/{lang}.txt' 
 
 def create_exclusion_dict(ex_file_path):
     exclusion_dict = {}
@@ -30,11 +30,15 @@ def create_exclusion_dict(ex_file_path):
             exclusion_dict[char] = True
     return exclusion_dict
 
-exclusion_dict = create_exclusion_dict(ex_file_path)
 
 def check_exclusion(string, exclusion_dict):
     return any(exclusion_dict.get(char, False) for char in string)
 
+def check_exclusion_reason(string, exclusion_dict):
+    excluded_chars = {char for char in string if char in exclusion_dict}
+    if excluded_chars:
+        return f"The text contained these exclusion characters: {', '.join(excluded_chars)}"
+    return "The text is valid."
 
 class InvalidURLException(Exception):
     """Exception raised for invalid URL or file path."""
@@ -146,7 +150,8 @@ def write_kaldi_dataset(podcasts, dataset_dir, use_sox_str=True):
 
                   # skip if text contains a bogus char
                   if check_exclusion(text, exclusion_dict):
-                      print(f'Exclusion character found, ignoring entire segment')
+                      print(f'Exclusion character found, ignoring entire segment. Text is:', text)
+                      print(check_exclusion_reason(text, exclusion_dict))
                       continue
 
                   recording_id = f'{speaker_id}_{episode_id}'
@@ -413,6 +418,7 @@ if __name__ == '__main__':
     change_audio_fileending = config["change_audio_fileending_to"]
     language = config["podcast_language"]
     file_format = args.file_format
+    ex_file_path_lang = ex_file_path.replace('{lang}', language)
 
     # Print configuration summary
     print("\nConfiguration Summary:")
@@ -422,6 +428,7 @@ if __name__ == '__main__':
     print(f"Replace Audio Dataset Location: {replace_audio_dataset_location}")
     print(f"Change Audio File Ending To: {change_audio_fileending}")
     print(f"Podcast Language: {language}")
+    print(f"Exclusion character list: {ex_file_path_lang}")
     print(f"File format: {file_format}")
 
     # Confirm before proceeding
@@ -429,6 +436,8 @@ if __name__ == '__main__':
     if confirm != 'y':
         print("Aborting dataset creation.")
         sys.exit(-1)
+
+    exclusion_dict = create_exclusion_dict(ex_file_path_lang)
 
     process(server_api_url, api_secret_key, args.dev_n, args.test_n, args.test_dev_episodes_threshold, language,
             audio_dataset_location, replace_audio_dataset_location, change_audio_fileending, file_format=file_format)
