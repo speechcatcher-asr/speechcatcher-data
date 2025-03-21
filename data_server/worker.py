@@ -38,10 +38,14 @@ podcast_initial_prompts = {
 def cancel_work(server, secret_api_key, wid, api_version='apiv1'):
     """ Cancels the work in progress for one task on the server. """
     print(f'Trying to cancel {wid}...')
-    cancel_work = f'{server}/{api_version}/cancel_work/{wid}/{secret_api_key}'
-    resp = requests.get(url=cancel_work)
-    data = resp.json()
-    assert(data['success'] == True)
+    try:
+        cancel_work = f'{server}/{api_version}/cancel_work/{wid}/{secret_api_key}'
+        resp = requests.get(url=cancel_work)
+        data = resp.json()
+        assert(data['success'] == True)
+    except:
+        print('Error trying to cancel work id:', wid)
+        traceback.print_exc()
 
 def cancel_work_batch(server, api_secret_key, wids, api_version='apiv1'):
     """ Cancels the work in progress for a batch of tasks on the server. """
@@ -151,6 +155,14 @@ def transcribe_loop(server, language, secret_api_key, model='small', api_version
 
             print('Done uploading new VTT file!')
 
+        except JSONDecodeError as e:
+            print("Exception encountered trying to parse server response:", e)
+            traceback.print_exc()
+            time.sleep(10)
+            if wip:
+                print('Canceled with work in progress:', wid)
+                cancel_work(server, secret_api_key, wid, api_version)
+
         except KeyboardInterrupt:
             print("Keyboard interrupt")
             if wip:
@@ -161,10 +173,10 @@ def transcribe_loop(server, language, secret_api_key, model='small', api_version
         except Exception as e:
             print("Exception encountered in transcribe_loop:", e)
             traceback.print_exc()
+            time.sleep(10)
             if wip:
                 print('Canceled with work in progress:', wid)
                 cancel_work(server, secret_api_key, wid, api_version)
-            time.sleep(30)
 
 def upload_results_batch(server, api_version, secret_api_key, wids, results):
     """Uploads transcription results for a batch of work items."""
