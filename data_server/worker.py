@@ -6,6 +6,8 @@ import torch
 import numpy as np
 import io
 import time
+from json import JSONDecodeError
+
 from utils import load_config
 from whisper.utils import format_timestamp
 from typing import Iterator, TextIO
