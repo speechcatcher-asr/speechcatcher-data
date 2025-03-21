@@ -11,6 +11,7 @@ import traceback
 import concurrent.futures
 import sys
 import os
+import json
 from utils import *
 
 # You can also use sox, but fileformats are more limited.
@@ -19,7 +20,7 @@ sox_str = '%s sox %s -t wav -r 16k -b 16 -e signed -c 1 - |\n'
 # With ffmpeg, the dataset can load any file and can convert it to 16kHz wav on-the-fly.
 sox_str = '%s ffmpeg -i "%s" -acodec pcm_s16le -ar 16000 -ac 1 -f wav - |\n'
 
-ex_file_path = 'exclusion_chars/de.txt' 
+ex_file_path = 'exclusion_chars/{lang}.txt' 
 
 def create_exclusion_dict(ex_file_path):
     exclusion_dict = {}
@@ -29,11 +30,15 @@ def create_exclusion_dict(ex_file_path):
             exclusion_dict[char] = True
     return exclusion_dict
 
-exclusion_dict = create_exclusion_dict(ex_file_path)
 
 def check_exclusion(string, exclusion_dict):
     return any(exclusion_dict.get(char, False) for char in string)
 
+def check_exclusion_reason(string, exclusion_dict):
+    excluded_chars = {char for char in string if char in exclusion_dict}
+    if excluded_chars:
+        return f"The text contained these exclusion characters: {', '.join(excluded_chars)}"
+    return "The text is valid."
 
 class InvalidURLException(Exception):
     """Exception raised for invalid URL or file path."""
@@ -56,7 +61,7 @@ def read_local_file(file_path):
 # 01:23:45.678 -> 5025.678
 
 def timestamp_to_seconds_float(str_timestamp):
-    time_parts = re.split(':|\.', str_timestamp)
+    time_parts = re.split(r':|\.', str_timestamp)
     
     if len(time_parts[-1]) == 3:
         milliseconds_div = 1000.
@@ -125,15 +130,16 @@ def write_kaldi_dataset(podcasts, dataset_dir, use_sox_str=True):
               utt2dur_file.write(f'{recording_id} {max_seconds}\n')
 
               for i, segment in enumerate(episode['segments']):
-                  start = timestamp_to_seconds_float(segment['start'])
-                  end = timestamp_to_seconds_float(segment['end'])
+                  #convert timestamps if nessecary
+                  start = segment['start'] if isinstance(segment['start'], float) else timestamp_to_seconds_float(segment['start'])
+                  end = segment['end'] if isinstance(segment['end'], float) else timestamp_to_seconds_float(segment['end'])
 
                   if start > max_seconds:
-                      print(f'Warning, overflow in vtt for start time stamp for {filename}... ignore and skip this and the following segments.')
+                      print(f'Warning, overflow in transcript for start time stamp for {filename}... ignore and skip this and the following segments.')
                       break
 
                   if end > max_seconds:
-                      print(f'Warning, overflow in vtt end time stamp for {filename}... trying to fix.')
+                      print(f'Warning, overflow in transcript end time stamp for {filename}... trying to fix.')
                       end = max_seconds
 
                   if end <= start:
@@ -144,7 +150,8 @@ def write_kaldi_dataset(podcasts, dataset_dir, use_sox_str=True):
 
                   # skip if text contains a bogus char
                   if check_exclusion(text, exclusion_dict):
-                      print(f'Exclusion character found, ignoring entire segment')
+                      print(f'Exclusion character found, ignoring entire segment. Text is:', text)
+                      print(check_exclusion_reason(text, exclusion_dict))
                       continue
 
                   recording_id = f'{speaker_id}_{episode_id}'
@@ -190,12 +197,24 @@ def join_consecutive_segments_randomly(segments, max_length=15):
 
     return joined_segments
 
-# Download the VTT file
-def download_vtt_file(vtt_file_url):
-    response = requests.get(vtt_file_url)
-    vtt_content = response.text
+# Download the transcript file as text/string
+def download_file(file_url):
+    response = requests.get(file_url)
+    return response.text
 
-    return vtt_content
+# Load and parse a JSON file to extract timestamps and text
+def parse_json_segments(json_content):
+    data = json.loads(json_content)
+    
+    segments = []
+    for segment in data.get("segments", []):
+        segments.append({
+            'start': segment["start"],
+            'end': segment["end"],
+            'text': segment["text"]
+        })
+
+    return segments
 
 # Parse a VTT file and extract timestamps and text
 def parse_vtt_segments(vtt_content):
@@ -227,15 +246,15 @@ def parse_vtt_segments(vtt_content):
     return segments
 
 # process_podcast wrapper to catch exceptions in process_podcast
-def process_podcast_wrapper(server_api_url, api_secret_key, elem_title, audio_dataset_location, replace_audio_dataset_location, change_audio_fileending):
+def process_podcast_wrapper(server_api_url, api_secret_key, elem_title, audio_dataset_location, replace_audio_dataset_location, change_audio_fileending, file_format):
     try:
-        return process_podcast(server_api_url, api_secret_key, elem_title, audio_dataset_location, replace_audio_dataset_location, change_audio_fileending)
+        return process_podcast(server_api_url, api_secret_key, elem_title, audio_dataset_location, replace_audio_dataset_location, change_audio_fileending, file_format)
     except:
         print('Warning: error in ', elem_title, 'ignoring entire podcast...')
         traceback.print_exc()
 
 # Process all episodes of a particular podcast
-def process_podcast(server_api_url, api_secret_key, title, audio_dataset_location='', replace_audio_dataset_location='', change_audio_fileending=''):
+def process_podcast(server_api_url, api_secret_key, title, audio_dataset_location='', replace_audio_dataset_location='', change_audio_fileending='', file_format='vtt'):
 
     request_url = f"{server_api_url}/get_episode_list/{api_secret_key}"
     data = {'podcast_title': title}
@@ -251,6 +270,9 @@ def process_podcast(server_api_url, api_secret_key, title, audio_dataset_locatio
     episodes = []
 
     for episode in episode_list:
+        if 'episode_title' not in episode:
+            print('WARNING: Malformed episode (skipping):', episode)
+            continue
         try:
             print('parsing:', episode['episode_title'])
 
@@ -263,13 +285,13 @@ def process_podcast(server_api_url, api_secret_key, title, audio_dataset_locatio
                 print('Warning, ignoring empty episode url.')
                 continue
 
-            vtt_content = None
+            file_content = None
             url = episode['transcript_file_url']
 
             if url.startswith('http'):
-                vtt_content = download_vtt_file(url)
+                file_content = download_file(url)
             elif url.startswith('/'):
-                vtt_content = read_local_file(url)
+                file_content = read_local_file(url)
             else:
                 raise InvalidURLException(url)
 
@@ -287,7 +309,13 @@ def process_podcast(server_api_url, api_secret_key, title, audio_dataset_locatio
                 elif episode['cache_audio_file'].endswith('.opus'):
                     episode['cache_audio_file'] = episode['cache_audio_file'][:-5] + change_audio_fileending
 
-            segments = parse_vtt_segments(vtt_content) 
+            if file_format == 'vtt':
+                segments = parse_vtt_segments(file_content)
+            elif file_format == 'json':
+                segments = parse_json_segments(file_content)
+            else:
+                raise ValueError(f"Unsupported file format: {file_format}")
+
             segments_merged = join_consecutive_segments_randomly(segments)
             
             episode_copy = episode.copy()
@@ -295,14 +323,14 @@ def process_podcast(server_api_url, api_secret_key, title, audio_dataset_locatio
 
             episodes.append(episode_copy)
         except:
-            print('Error processing episode:', episode['episode_title'],'skipping...')
+            print('Error processing episode:', episode, 'skipping...')
             traceback.print_exc()
 
     return {'title': title, 'episodes': episodes}
 
 # Divide dataset into train/dev/test and start processing the podcasts
 def process(server_api_url, api_secret_key, dev_n=10, test_n=10, test_dev_episodes_threshold=10, language='en',
-                                     audio_dataset_location='', replace_audio_dataset_location='', change_audio_fileending=''):
+                                     audio_dataset_location='', replace_audio_dataset_location='', change_audio_fileending='', file_format='vtt'):
     
     request_url = f"{server_api_url}/get_podcast_list/{language}/{api_secret_key}"
     response = requests.get(request_url)
@@ -325,14 +353,10 @@ def process(server_api_url, api_secret_key, dev_n=10, test_n=10, test_dev_episod
     #print(dev_set)
     #print(test_set)
 
-    #dev_podcasts = []
-    #for elem in dev_set:
-    #    dev_podcasts += [process_podcast(server_api_url, api_secret_key, elem['title'], audio_dataset_location, replace_audio_dataset_location, change_audio_fileending)]
-
     # create dev set in parallel
     dev_podcasts = []
     with concurrent.futures.ProcessPoolExecutor() as executor:
-        futures = [executor.submit(process_podcast, server_api_url, api_secret_key, elem['title'], audio_dataset_location, replace_audio_dataset_location, change_audio_fileending) for elem in dev_set]
+        futures = [executor.submit(process_podcast, server_api_url, api_secret_key, elem['title'], audio_dataset_location, replace_audio_dataset_location, change_audio_fileending, file_format) for elem in dev_set]
     
         # Use the as_completed() function to iterate over the completed futures and retrieve their results
         for future in concurrent.futures.as_completed(futures):
@@ -344,44 +368,31 @@ def process(server_api_url, api_secret_key, dev_n=10, test_n=10, test_dev_episod
     # create test set in parallel    
     test_podcasts = []
     with concurrent.futures.ProcessPoolExecutor() as executor:
-        futures = [executor.submit(process_podcast, server_api_url, api_secret_key, elem['title'], audio_dataset_location, replace_audio_dataset_location, change_audio_fileending) for elem in test_set]
+        futures = [executor.submit(process_podcast, server_api_url, api_secret_key, elem['title'], audio_dataset_location, replace_audio_dataset_location, change_audio_fileending, file_format) for elem in test_set]
 
         for future in concurrent.futures.as_completed(futures):
             result = future.result()
             test_podcasts.append(result)
 
-   # test_podcasts = []
-   # for elem in test_set:
-   #     test_podcasts += [process_podcast(server_api_url, api_secret_key, elem['title'], audio_dataset_location, replace_audio_dataset_location, change_audio_fileending)]
-
     write_kaldi_dataset(test_podcasts, 'data/test/')
 
     # create train set in parallel
-
     train_podcasts = []
 
     with concurrent.futures.ProcessPoolExecutor() as executor:
         podcast_futures = [executor.submit(process_podcast_wrapper, server_api_url, api_secret_key, elem['title'],
-                           audio_dataset_location, replace_audio_dataset_location, change_audio_fileending) for elem in train_set]
-        #try:
-        for future in concurrent.futures.as_completed(podcast_futures):
-            podcast = future.result()
-            if podcast is not None:
-                train_podcasts.append(podcast)
-        #except KeyboardInterrupt:
-        #    print('User abort: Cancelling remaining tasks')
-        #    for future in podcast_futures:
-        #        future.cancel()
-        #    concurrent.futures.wait(podcast_futures)
-        #    sys.exit(-1)
-    #train_podcasts = []
-    #for elem in train_set:
-    #    try:
-    #        train_podcasts += [process_podcast(server_api_url, api_secret_key, elem['title'], audio_dataset_location, replace_audio_dataset_location, change_audio_fileending)]
-    #    except:
-    #        print('Warning: error in ', elem['title'], 'ignoring entire podcast...')
-    #        traceback.print_exc()
-    #        continue
+                           audio_dataset_location, replace_audio_dataset_location, change_audio_fileending, file_format) for elem in train_set]
+        try:
+            for future in concurrent.futures.as_completed(podcast_futures):
+                podcast = future.result()
+                if podcast is not None:
+                    train_podcasts.append(podcast)
+        except KeyboardInterrupt:
+            print('User abort: Cancelling remaining tasks')
+            for future in podcast_futures:
+                future.cancel()
+            concurrent.futures.wait(podcast_futures)
+            sys.exit(-1)
     write_kaldi_dataset(train_podcasts, 'data/train/')
 
 
@@ -392,6 +403,7 @@ if __name__ == '__main__':
     parser.add_argument('-t', '--test', default=10, dest='test_n', help='Sample test set from n speakers/podcasts', type=int)
     parser.add_argument('-n', '--test_dev_episodes_threshold', default=10, dest='test_dev_episodes_threshold',
       help='Only sample the test and dev set from shorter podcasts, where len(episodes) is smaller than this value', type=int)
+    parser.add_argument('--file-format', choices=['vtt', 'json'], default='vtt', help='Specify the subtitle file format (vtt or json)')
     parser.add_argument('--debug', dest='debug', help='Start with debugging enabled',
                         action='store_true', default=False)
 
@@ -405,4 +417,27 @@ if __name__ == '__main__':
     replace_audio_dataset_location = config["replace_audio_dataset_location"]
     change_audio_fileending = config["change_audio_fileending_to"]
     language = config["podcast_language"]
-    process(server_api_url, api_secret_key, args.dev_n, args.test_n, args.test_dev_episodes_threshold, language, audio_dataset_location, replace_audio_dataset_location, change_audio_fileending)
+    file_format = args.file_format
+    ex_file_path_lang = ex_file_path.replace('{lang}', language)
+
+    # Print configuration summary
+    print("\nConfiguration Summary:")
+    print(f"API Secret Key: {'*' * len(api_secret_key)} (hidden for security)")
+    print(f"Server API URL: {server_api_url}")
+    print(f"Audio Dataset Location: {audio_dataset_location}")
+    print(f"Replace Audio Dataset Location: {replace_audio_dataset_location}")
+    print(f"Change Audio File Ending To: {change_audio_fileending}")
+    print(f"Podcast Language: {language}")
+    print(f"Exclusion character list: {ex_file_path_lang}")
+    print(f"File format: {file_format}")
+
+    # Confirm before proceeding
+    confirm = input("\nDo you want to proceed with dataset creation? (y/n): ").strip().lower()
+    if confirm != 'y':
+        print("Aborting dataset creation.")
+        sys.exit(-1)
+
+    exclusion_dict = create_exclusion_dict(ex_file_path_lang)
+
+    process(server_api_url, api_secret_key, args.dev_n, args.test_n, args.test_dev_episodes_threshold, language,
+            audio_dataset_location, replace_audio_dataset_location, change_audio_fileending, file_format=file_format)
