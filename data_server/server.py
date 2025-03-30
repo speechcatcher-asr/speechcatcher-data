@@ -29,6 +29,8 @@ podcast_columns_list = podcast_columns.split(', ')
 def make_local_url(my_url, config):
     if 'replace_local_audio_url' in config:
         try:
+            if '->' not in config['replace_local_audio_url']:
+                return my_url
             a, b = config['replace_local_audio_url'].split('->')
             return my_url.replace(a, b)  # Make sure to return the modified URL
         except Exception as e:
