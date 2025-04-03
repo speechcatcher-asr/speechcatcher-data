@@ -59,7 +59,7 @@ def cancel_work_batch(server, api_secret_key, wids, api_version='apiv1'):
     return data
 
 def transcribe_loop(server, language, secret_api_key, model_name='small', api_version='apiv1', implementation='original', beam_size=5, use_local_url=False):
-    print(f'Loading whisper model {model} with {implementation} implementation')
+    print(f'Loading whisper model {model_name} with {implementation} implementation and beam size {beam_size}...')
 
     # Initialize the selected transcription implementation
     # Abstraction classes for major whisper implementations can be found in whisper_single_file.py
@@ -79,6 +79,8 @@ def transcribe_loop(server, language, secret_api_key, model_name='small', api_ve
         raise NotImplementedError("Not implemented:", implementation)
 
     transcriber.load_model()
+    print('Done!')
+
     get_work_url = f'{server}/{api_version}/get_work/{language}/{secret_api_key}'
     print(f'{get_work_url=}')
 
