@@ -5,6 +5,7 @@ import subprocess
 import requests
 import re
 import jiwer
+import shlex
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -89,6 +90,7 @@ def extract_text_from_vtt(vtt_content):
     return text_only
 
 def calculate_wer_cer(reference_path, hypothesis_path, language="en", wer_lower_case=True):
+    print(f'Calculating WER. Reference file is {shlex.quote(reference_path)}. Hypothesis file is {shlex.quote(hypothesis_path)}')
     with open(reference_path, 'r') as ref_file, open(hypothesis_path, 'r') as hyp_file:
         ref_content = ref_file.read()
         hyp_content = hyp_file.read()
@@ -112,7 +114,21 @@ def calculate_wer_cer(reference_path, hypothesis_path, language="en", wer_lower_
         # Compare transcripts on the character level with punctuation and casing
         cer_score = jiwer.cer(ref_text, hyp_text)
 
+        print(f'WER,CER for {shlex.quote(hypothesis_path)}: {wer_score,cer_score}')
+
         return wer_score, cer_score
+
+def get_media_duration(audio_file):
+    """Fetch the duration of a media file using ffprobe."""
+    try:
+        result = subprocess.run(
+            ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", audio_file],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        duration = float(result.stdout.strip())
+        return duration
+    except Exception as e:
+        print(f"Error processing file {audio_file}: {e}")
+        return 0.0
 
 def main():
     parser = argparse.ArgumentParser(description='Batch Transcribe Audio Files with Whisper')
@@ -120,8 +136,11 @@ def main():
     parser.add_argument('--batch_size', type=int, default=4, help='Number of audio files to process in a batch')
     parser.add_argument('--beam_size', type=int, default=5, help='Decoding beam size')
     parser.add_argument('--min_duration', type=float, default=280.0, help='Minimum duration of audio files in seconds')
+    parser.add_argument('--model-name', type=str, default='large-v3', help='Model name tag to use for loading the Whisper model.')
     parser.add_argument('--implementation', choices=['original', 'faster', 'X', 'batched_transformer', 'cpp'], default='original', help='Select the whisper implementation to use')
     parser.add_argument('--force-cli-reference-rerun', action='store_true', help='Force rerun of Whisper CLI for reference transcriptions even if they exist')
+    parser.add_argument('--reference-dir', type=str, help='Directory containing reference VTT files')
+    parser.add_argument('--media-dir', type=str, help='Directory containing local media files to transcribe')
     args = parser.parse_args()
 
     # Directory setup
@@ -131,32 +150,39 @@ def main():
     os.makedirs(implementation_dir, exist_ok=True)
     os.makedirs(reference_dir, exist_ok=True)
 
-    # Fetching batch
-    tasks = fetch_batch(args.language, args.batch_size, args.min_duration)
-    if not tasks:
-        print("No tasks fetched, nothing to transcribe.")
-        return
+    # Fetching batch or using local media files
+    if args.media_dir:
+        media_files = [os.path.join(args.media_dir, f) for f in os.listdir(args.media_dir) if f.endswith(('.mp3', '.wav', '.flac', '.mp4', '.mov', '.avi', '.mkv', '.webm'))]
+        audio_urls = [(f, get_media_duration(f)) for f in media_files]  # Compute duration for local files
+    else:
+        tasks = fetch_batch(args.language, args.batch_size, args.min_duration)
+        if not tasks:
+            print("No tasks fetched, nothing to transcribe.")
+            return
+        audio_urls = [(task['local_cache_audio_url'], task['duration']) for task in tasks]
 
-    audio_urls = [(task['local_cache_audio_url'], task['duration']) for task in tasks]
-    print('audio_urls:', audio_urls)
+    for i,audio_url in enumerate(audio_urls):
+        print(f'Audio_url [{i}]: {shlex.quote(audio_url[0])} with duration {audio_url[1]}')
 
     # Transcription based on the selected implementation
     if args.implementation == 'original':
-        transcriber = WhisperOriginal(beam_size=args.beam_size)
+        transcriber = WhisperOriginal(beam_size=args.beam_size, model_name=args.model_name, language=args.language)
     elif args.implementation == 'faster':
-        transcriber = FasterWhisper(beam_size=args.beam_size)
+        transcriber = FasterWhisper(beam_size=args.beam_size, model_name=args.model_name, language=args.language)
     elif args.implementation == 'X':
-        transcriber = WhisperX(beam_size=args.beam_size)
+        transcriber = WhisperX(beam_size=args.beam_size, model_name=args.model_name, language=args.language)
     elif args.implementation == 'batched_transformer':
-        transcriber = BatchedTransformerWhisper(beam_size=args.beam_size)
+        transcriber = BatchedTransformerWhisper(beam_size=args.beam_size, model_name=args.model_name, language=args.language)
     elif args.implementation == 'cpp':
-        transcriber = WhisperCpp(beam_size=args.beam_size)
+        transcriber = WhisperCpp(beam_size=args.beam_size, model_name=args.model_name, language=args.language)
     else:
         raise NotImplementedError("Not implemented:", args.implementation)
 
+    print(f'Loading whisper model: {args.model_name}')
     start_time = time.time()
     transcriber.load_model()
     model_load_time = time.time() - start_time
+    print(f'Done! Model load time is: {model_load_time:.2f}s')
 
     wers = []
     cers = []
@@ -169,10 +195,10 @@ def main():
         start_time = time.time()
         audio_urls_list = [url for url, _ in audio_urls]
         runs = 1
-        
+
         if runs > 1:
             do_plot = True
-        
+
         multi_transcriptions = transcriber.transcribe_batch(audio_urls_list, language=args.language, runs=runs)
         total_processing_time = time.time() - start_time
 
@@ -192,15 +218,17 @@ def main():
                 with open(file_path, 'w') as file_out:
                     transcriber.write_vtt(transcription, file_out)
 
-                # Transcribe with CLI for reference
+                # Transcribe with CLI for reference or use provided reference directory
                 reference_file_path = os.path.join(reference_dir, filename)
+                if args.reference_dir:
+                    reference_file_path = os.path.join(args.reference_dir, filename)
                 if args.force_cli_reference_rerun or not os.path.exists(reference_file_path):
                     transcribe_with_cli(audio_url, reference_dir, language=args.language)
                 else:
                     if i==0:
                         print(f'Not overwriting {reference_file_path} with Whisper CLI since it already exists.'
                           'You can force to redo the reference transcription with --force-cli-reference-rerun.')
-    
+
                 # Calculate WER and CER using extracted text
                 wer, cer = calculate_wer_cer(reference_file_path, file_path)
                 print(f'[run {i}] WER and CER is:', wer, cer)
@@ -239,9 +267,11 @@ def main():
         # Transcribe each file individually
         for audio_url, duration in audio_urls:
             total_audio_duration += duration
+            print(f'Running whisper transcriber on: {shlex.quote(audio_url)} with language={args.language} and duration={duration}')
             start_time = time.time()
             transcription = transcriber.transcribe(audio_url, language=args.language, duration=duration)
             transcription_time = time.time() - start_time
+            print(f'Done! Transcription took {transcription_time:.2f}s.')
             total_processing_time += transcription_time
 
             filename = os.path.splitext(os.path.basename(audio_url))[0] + '.vtt'
@@ -249,12 +279,14 @@ def main():
             with open(file_path, 'w') as file_out:
                 transcriber.write_vtt(transcription, file_out)
 
-            # Transcribe with CLI for reference
+            # Transcribe with CLI for reference or use provided reference directory
             reference_file_path = os.path.join(reference_dir, filename)
+            if args.reference_dir:
+                reference_file_path = os.path.join(args.reference_dir, filename)
             if args.force_cli_reference_rerun or not os.path.exists(reference_file_path):
                 transcribe_with_cli(audio_url, reference_dir, language=args.language)
             else:
-                print(f'Not overwriting {reference_file_path} with Whisper CLI since it already exists.'
+                print(f'Not overwriting {shlex.quote(reference_file_path)} with Whisper CLI since it already exists. '
                       'You can force to redo the reference transcription with --force-cli-reference-rerun.')
 
             # Calculate WER and CER using extracted text
@@ -277,4 +309,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
