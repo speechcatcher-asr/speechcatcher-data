@@ -52,7 +52,7 @@ def cancel_work_batch(server, api_secret_key, wids, api_version='apiv1'):
     print('Cancelled work in progress:', data)
     return data
 
-def transcribe_loop(server, language, secret_api_key, model='small', api_version='apiv1', implementation='original', beam_size=5, use_local_url=False):
+def transcribe_loop(server, language, secret_api_key, model_name='small', api_version='apiv1', implementation='original', beam_size=5, use_local_url=False):
     print(f'Loading whisper model {model} with {implementation} implementation')
 
     # Initialize the selected transcription implementation
@@ -62,13 +62,13 @@ def transcribe_loop(server, language, secret_api_key, model='small', api_version
     # hallucinations.
 
     if implementation == 'original':
-        transcriber = WhisperOriginal(beam_size=beam_size)
+        transcriber = WhisperOriginal(beam_size=beam_size, model_name=model_name)
     elif implementation == 'faster':
-        transcriber = FasterWhisper(beam_size=beam_size)
+        transcriber = FasterWhisper(beam_size=beam_size, model_name=model_name)
     elif implementation == 'X':
-        transcriber = WhisperX(beam_size=beam_size)
+        transcriber = WhisperX(beam_size=beam_size, model_name=model_name)
     elif implementation == 'cpp':
-        transcriber = WhisperCpp(beam_size=beam_size)
+        transcriber = WhisperCpp(beam_size=beam_size, model_name=model_name)
     else:
         raise NotImplementedError("Not implemented:", implementation)
 
@@ -277,9 +277,13 @@ if __name__ == '__main__':
     config = load_config()
     default_lang = 'en'
     default_beam_size = 5
+    default_whisper_model = 'large_v3'
 
     if 'podcast_language' in config:
         default_lang = config['podcast_language']
+
+    if 'whisper_model' in config:
+        default_whisper_model = config['whisper_model']
 
     server_api_url = config.get('server_api_url', "http://mini1.local:5562/apiv1/")
     server_url, api_version = server_api_url.rstrip('/').rsplit('/', 1)
@@ -290,11 +294,12 @@ if __name__ == '__main__':
     parser.add_argument('--debug', dest='debug', help='Start with debugging enabled', action='store_true', default=False)
     parser.add_argument('--implementation', choices=['original', 'faster', 'X', 'batched_transformer', 'cpp'], default='original', help='Select the whisper implementation to use. Default: original')
     parser.add_argument('--beam-size', type=int, default=default_beam_size, help=f'Decoding beam size. Default: {default_beam_size}')
+    parser.add_argument('--model-name', type=str, default=default_whisper_model, help=f'Whisper model name tag. Default: {default_whisper_model}')
     parser.add_argument('--api-version', default=api_version, help=f'API version to use. Default: {api_version}')
     parser.add_argument('--use_local_url', dest='use_local_url', help='Use local LAN URL instead of global internet URL.', action='store_true', default=False)
     args = parser.parse_args()
 
     if args.implementation == 'batched_transformer':
-        transcribe_loop_batch(args.server, args.language, config['secret_api_key'], model=config['whisper_model'], api_version=args.api_version, beam_size=args.beam_size)
+        transcribe_loop_batch(args.server, args.language, config['secret_api_key'], model=args.model_name, api_version=args.api_version, beam_size=args.beam_size)
     else:
-        transcribe_loop(args.server, args.language, config['secret_api_key'], model=config['whisper_model'], implementation=args.implementation, api_version=args.api_version, beam_size=args.beam_size, use_local_url=args.use_local_url)
+        transcribe_loop(args.server, args.language, config['secret_api_key'], model=args.model_name, implementation=args.implementation, api_version=args.api_version, beam_size=args.beam_size, use_local_url=args.use_local_url)
