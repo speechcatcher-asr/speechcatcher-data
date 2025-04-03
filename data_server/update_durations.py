@@ -8,7 +8,7 @@ def update_duration():
     p_connection, p_cursor = connect_to_db(database=config["database"], user=config["user"], password=config["password"], host=config["host"], port=config["port"])
 
     # Query to select podcasts where duration might be incorrect or unset
-    p_cursor.execute("SELECT podcast_episode_id, cache_audio_file, duration FROM podcasts;")
+    p_cursor.execute("SELECT podcast_episode_id, cache_audio_file, duration FROM podcasts ORDER BY duration;")
     records = p_cursor.fetchall()
 
     corrupted_files = []
@@ -34,14 +34,12 @@ def update_duration():
 
         # Update the database with the new duration or set it to -1 if there was an error
         p_cursor.execute("UPDATE podcasts SET duration = %s WHERE podcast_episode_id = %s;", (new_duration, episode_id))
+        p_connection.commit()
         updated_durations.append((audio_file, old_duration if old_duration is not None else -1, new_duration))
 
         print('Done!',old_duration,'->',new_duration)
 
         i+=1
-
-    # Commit the updates to the database
-    p_connection.commit()
 
     # Log corrupted files with flush after each write
     with open('possibly_corrupted_cache_files.txt', 'w') as file:
