@@ -30,7 +30,7 @@ def calculate_compression_ratio(text):
 
 def find_media_file(base_path):
     """Find a media file with a common audio/video extension."""
-    extensions = ['.mp3', '.mp4', '.aac', '.flac', '.wav', '.ogg', '.m4a', '.mov', '.avi']
+    extensions = ['.mp3', '.mp4', '.aac', '.flac', '.wav', '.ogg', '.m4a', '.mov', '.avi', '.webm']
     for ext in extensions:
         candidate = base_path + ext
         if os.path.exists(candidate):
