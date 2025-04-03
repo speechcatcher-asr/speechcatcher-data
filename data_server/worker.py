@@ -59,7 +59,7 @@ def cancel_work_batch(server, api_secret_key, wids, api_version='apiv1'):
     return data
 
 def transcribe_loop(server, language, secret_api_key, model_name='small', api_version='apiv1', implementation='original', beam_size=5, use_local_url=False):
-    print(f'Loading whisper model {model_name} with {implementation} implementation and beam size {beam_size}...')
+    print(f'Loading whisper model {model_name} with {implementation} implementation...')
 
     # Initialize the selected transcription implementation
     # Abstraction classes for major whisper implementations can be found in whisper_single_file.py
@@ -68,13 +68,13 @@ def transcribe_loop(server, language, secret_api_key, model_name='small', api_ve
     # hallucinations.
 
     if implementation == 'original':
-        transcriber = WhisperOriginal(beam_size=beam_size, model_name=model_name)
+        transcriber = WhisperOriginal(language=language, beam_size=beam_size, model_name=model_name)
     elif implementation == 'faster':
-        transcriber = FasterWhisper(beam_size=beam_size, model_name=model_name)
+        transcriber = FasterWhisper(language=language, beam_size=beam_size, model_name=model_name)
     elif implementation == 'X':
-        transcriber = WhisperX(beam_size=beam_size, model_name=model_name)
+        transcriber = WhisperX(language=language, beam_size=beam_size, model_name=model_name)
     elif implementation == 'cpp':
-        transcriber = WhisperCpp(beam_size=beam_size, model_name=model_name)
+        transcriber = WhisperCpp(language=language, beam_size=beam_size, model_name=model_name)
     else:
         raise NotImplementedError("Not implemented:", implementation)
 
