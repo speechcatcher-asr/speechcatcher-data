@@ -4,6 +4,7 @@ import copy
 class WhisperSingleFile:
     '''Base class for Whisper implementations that work operate on single files.'''
     def __init__(self, model_name='large-v3', device='cuda', language='en', beam_size=5):
+        print(f'Initialising whisper model {model_name} with language {language} on device {device} with beam size {beam_size}')
         self.model_name = model_name
         self.device = device
         self.language = language
