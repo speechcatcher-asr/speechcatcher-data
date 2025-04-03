@@ -314,6 +314,6 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     if args.implementation == 'batched_transformer':
-        transcribe_loop_batch(args.server, args.language, config['secret_api_key'], model=args.model_name, api_version=args.api_version, beam_size=args.beam_size)
+        transcribe_loop_batch(args.server, args.language, config['secret_api_key'], model_name=args.model_name, api_version=args.api_version, beam_size=args.beam_size)
     else:
-        transcribe_loop(args.server, args.language, config['secret_api_key'], model=args.model_name, implementation=args.implementation, api_version=args.api_version, beam_size=args.beam_size, use_local_url=args.use_local_url)
+        transcribe_loop(args.server, args.language, config['secret_api_key'], model_name=args.model_name, implementation=args.implementation, api_version=args.api_version, beam_size=args.beam_size, use_local_url=args.use_local_url)
