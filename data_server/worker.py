@@ -59,7 +59,7 @@ def cancel_work_batch(server, api_secret_key, wids, api_version='apiv1'):
     return data
 
 def transcribe_loop(server, language, secret_api_key, model_name='small', api_version='apiv1', implementation='original', beam_size=5, use_local_url=False):
-    print(f'Loading whisper model {model} with {implementation} implementation')
+    print(f'Loading whisper model {model_name} with {implementation} implementation and beam size {beam_size}...')
 
     # Initialize the selected transcription implementation
     # Abstraction classes for major whisper implementations can be found in whisper_single_file.py
@@ -79,6 +79,8 @@ def transcribe_loop(server, language, secret_api_key, model_name='small', api_ve
         raise NotImplementedError("Not implemented:", implementation)
 
     transcriber.load_model()
+    print('Done!')
+
     get_work_url = f'{server}/{api_version}/get_work/{language}/{secret_api_key}'
     print(f'{get_work_url=}')
 
@@ -314,6 +316,6 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     if args.implementation == 'batched_transformer':
-        transcribe_loop_batch(args.server, args.language, config['secret_api_key'], model=args.model_name, api_version=args.api_version, beam_size=args.beam_size)
+        transcribe_loop_batch(args.server, args.language, config['secret_api_key'], model_name=args.model_name, api_version=args.api_version, beam_size=args.beam_size)
     else:
-        transcribe_loop(args.server, args.language, config['secret_api_key'], model=args.model_name, implementation=args.implementation, api_version=args.api_version, beam_size=args.beam_size, use_local_url=args.use_local_url)
+        transcribe_loop(args.server, args.language, config['secret_api_key'], model_name=args.model_name, implementation=args.implementation, api_version=args.api_version, beam_size=args.beam_size, use_local_url=args.use_local_url)
