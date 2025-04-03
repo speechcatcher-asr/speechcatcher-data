@@ -117,12 +117,109 @@ def get_every_episode_list(api_access_key):
 
     return jsonify(return_list)
 
+# Samples a new untranscribed episode from the db and sends the result as JSON
+# 
+# To avoid performance issues with ORDER BY RANDOM(), we use the "OFFSET + RANDOM * COUNT" trick
+# This allows us to sample a random author and episode without sorting the entire result set.
+# 
+# Steps:
+# 1. Count how many authors have untranscribed episodes in the given language.
+# 2. Select a random offset into that list to fetch one author.
+# 3. Count how many untranscribed episodes that author has.
+# 4. Select a random offset into that list to fetch one episode.
+#
+# This maintains randomness while being much faster on large datasets.
+
+@app.route(api_version + '/get_work/<language>/<api_access_key>', methods=['GET'])
+def get_work(language, api_access_key):
+    # Security check for API access key
+    if api_secret_key != api_access_key:
+        return jsonify({'success': False, 'error': 'API access key invalid'}), 401
+
+    # Validate language input
+    if not language.isalpha():
+        return jsonify({'success': False, 'error': 'Invalid language format'}), 400
+
+    try:
+        # Get count of authors with untranscribed episodes in the given language
+        p_cursor.execute("""
+            SELECT COUNT(DISTINCT authors)
+            FROM podcasts
+            WHERE transcript_file = %s AND language = %s
+        """, ('', language))
+        author_count = p_cursor.fetchone()[0]
+
+        if author_count == 0:
+            return jsonify({'success': False, 'error': f'No episodes left without transcriptions for language {language}.'}), 404
+
+        # Sample a random offset and pick one author
+        p_cursor.execute("""
+            SELECT DISTINCT authors
+            FROM podcasts
+            WHERE transcript_file = %s AND language = %s
+            OFFSET floor(random() * %s)
+            LIMIT 1
+        """, ('', language, author_count))
+        author_record = p_cursor.fetchone()
+
+        print("Language:", language)
+        print("Sampled author:", author_record)
+
+        if author_record:
+            author = author_record[0]
+
+            # Get count of episodes by that author
+            p_cursor.execute(f"""
+                SELECT COUNT(*)
+                FROM {sql_table}
+                WHERE transcript_file = %s AND language = %s AND authors = %s
+            """, ('', language, author))
+            episode_count = p_cursor.fetchone()[0]
+
+            if episode_count == 0:
+                return jsonify({'success': False, 'error': f'No episodes without transcription for author: {author}'}), 404
+
+            # Sample a random episode from that author
+            p_cursor.execute(f"""
+                SELECT {sql_table_ids}, episode_title, authors, language, episode_audio_url, cache_audio_url,
+                       cache_audio_file, transcript_file, duration
+                FROM {sql_table}
+                WHERE transcript_file = %s AND language = %s AND authors = %s
+                OFFSET floor(random() * %s)
+                LIMIT 1
+            """, ('', language, author, episode_count))
+            episode_record = p_cursor.fetchone()
+
+            if episode_record:
+                table_id, episode_title, authors, language, episode_audio_url, cache_audio_url, cache_audio_file, transcript_file, duration = episode_record
+                return jsonify({
+                    'wid': table_id,
+                    'episode_title': episode_title,
+                    'authors': authors,
+                    'language': language,
+                    'episode_audio_url': episode_audio_url,
+                    'cache_audio_url': cache_audio_url,
+                    'local_cache_audio_url': make_local_url(cache_audio_url, config),
+                    'cache_audio_file': cache_audio_file,
+                    'transcript_file': transcript_file,
+                    'duration': duration,
+                    'success': True
+                })
+            else:
+                return jsonify({'success': False, 'error': f'No episodes found for author: {author}'}), 404
+        else:
+            return jsonify({'success': False, 'error': 'No author found'}), 404
+
+    except Exception as e:
+        app.logger.error('Unexpected error:', exc_info=True)
+        return jsonify({'success': False, 'error': 'An unexpected error occurred'}), 500
+
 
 # Samples a new untranscribed episode from the db and sends the result as JSON
 # to have more diversity early on, we first sample an author and then a random episode from that author
 # this helps to not over sample from the authors with the most episodes early on
-@app.route(api_version + '/get_work/<language>/<api_access_key>', methods=['GET'])
-def get_work(language, api_access_key):
+@app.route(api_version + '/get_work_slow/<language>/<api_access_key>', methods=['GET'])
+def get_work_slow(language, api_access_key):
     # Security check for API access key
     if api_secret_key != api_access_key:
         return jsonify({'success': False, 'error': 'API access key invalid'}), 401
