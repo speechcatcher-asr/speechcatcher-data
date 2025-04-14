@@ -75,7 +75,7 @@ With a pytorch cloud instance for instance, you can setup a worker node quickly 
     python3 -m venv venv
     . venv/bin/activate
     pip3 install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu128
-    pip3 install git+https://github.com/openai/whisper psycopg2-binary requests faster-whisper
+    pip3 install git+https://github.com/openai/whisper psycopg2-binary requests faster-whisper ffmpeg-python
    
 Then setup config.yaml or simply copy it from your server:
 
@@ -84,11 +84,11 @@ Then setup config.yaml or simply copy it from your server:
 You can now start the worker node with (replace 'de' with the langauge you want to transcribe):
 
     CUDA_VISIBLE_DEVICES=0 python3 worker.py
+    # wait for the model download to finish before starting more workers on the same machine!
 
 In case you have more than one GPU, simply use the CUDA_VISIBLE_DEVICES variable to assign workers to GPUs:
 
     CUDA_VISIBLE_DEVICES=1 python3 worker.py
-    # wait for the model download to finish before starting more workers on the same machine
     ...
     CUDA_VISIBLE_DEVICES=n python3 worker.py
 
