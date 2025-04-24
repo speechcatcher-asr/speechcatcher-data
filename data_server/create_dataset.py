@@ -160,6 +160,10 @@ def write_kaldi_dataset(podcasts, dataset_dir, use_sox_str=True, remove_non_prin
                   print(vtt_file, 'vtt file is corrputed, skipping!')
                   continue
 
+              if not episode['segments']:
+                  print(vtt_file, 'no segments in vtt transcript (after filtering), skipping!')
+                  continue
+
               author = episode['authors'] + '_' + podcast['title']
               episode_id = hashlib.sha1(filename.encode()).hexdigest()[:20]
               speaker_id = hashlib.sha1(author.encode()).hexdigest()[:20]
@@ -268,31 +272,46 @@ def parse_json_segments(json_content):
     return segments
 
 # Parse a VTT file and extract timestamps and text
-def parse_vtt_segments(vtt_content):
+# Any segment that repeats more often than ignore_repeat_lines times will be ignored (very probable whisper hallucination)
+def parse_vtt_segments(vtt_content, ignore_repeat_lines=3):
     lines = vtt_content.split('\n')
     segments = []
 
     # Iterate over the lines and parse the segments
     current_segment = None
+    last_text = None
+    repeat_count = 0
+
     for line in lines:
         if line.startswith('WEB'):
             continue
+
         # This line indicates the start of a new segment and time stamp info
         if '-->' in line:
             if current_segment:
-                segments.append(current_segment)
-            a,b = line.split('-->')
-            a,b = a.strip(), b.strip()
-            current_segment = {'start': a, 'end': b, 'text':''}
+                current_text = current_segment['text'].strip()
+                repeat_count = repeat_count + 1 if current_text == last_text else 0
+
+                if repeat_count < ignore_repeat_lines:
+                    segments.append(current_segment)
+                    last_text = current_text
+            # Start a new segment
+            a, b = line.split('-->')
+            a, b = a.strip(), b.strip()
+            current_segment = {'start': a, 'end': b, 'text': ''}
         elif line.strip():
             if current_segment['text'] == '':
                 current_segment['text'] = line
             else:
                 current_segment['text'] += '\n' + line
 
-    # Add the last segment
+    # Handle the last segment
     if current_segment:
-        segments.append(current_segment)
+        current_text = current_segment['text'].strip()
+        repeat_count = repeat_count + 1 if current_text == last_text else 0
+
+        if repeat_count < ignore_repeat_lines:
+            segments.append(current_segment)
 
     return segments
 
