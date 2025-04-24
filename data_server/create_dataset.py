@@ -12,6 +12,7 @@ import concurrent.futures
 import sys
 import os
 import json
+import unicodedata
 from utils import *
 
 # You can also use sox, but fileformats are more limited.
@@ -20,7 +21,7 @@ sox_str = '%s sox %s -t wav -r 16k -b 16 -e signed -c 1 - |\n'
 # With ffmpeg, the dataset can load any file and can convert it to 16kHz wav on-the-fly.
 sox_str = '%s ffmpeg -i "%s" -acodec pcm_s16le -ar 16000 -ac 1 -f wav - |\n'
 
-ex_file_path = 'exclusion_chars/{lang}.txt' 
+ex_file_path = 'exclusion_chars/{lang}.txt'
 
 def create_exclusion_dict(ex_file_path):
     exclusion_dict = {}
@@ -29,7 +30,6 @@ def create_exclusion_dict(ex_file_path):
             char = line.strip()
             exclusion_dict[char] = True
     return exclusion_dict
-
 
 def check_exclusion(string, exclusion_dict):
     return any(exclusion_dict.get(char, False) for char in string)
@@ -62,7 +62,7 @@ def read_local_file(file_path):
 
 def timestamp_to_seconds_float(str_timestamp):
     time_parts = re.split(r':|\.', str_timestamp)
-    
+
     if len(time_parts[-1]) == 3:
         milliseconds_div = 1000.
     elif len(time_parts[-1]) == 6:
@@ -79,6 +79,49 @@ def timestamp_to_seconds_float(str_timestamp):
     else:
         raise ValueError("Invalid timestamp format (cant convert to float):",str_timestamp)
 
+def is_printable_unicode(char):
+    category = unicodedata.category(char)
+    # Categories starting with 'C' are control chars, format chars, etc.
+    return not category.startswith('C')
+
+def find_non_printable_unicode_lines(file_path):
+    with open(file_path, 'r', encoding='utf-8') as f:
+        for line_num, line in enumerate(f, start=1):
+            if line[-1] == '\n':
+                line = line[:-1]
+            non_printables = [(i, c, unicodedata.name(c, "UNKNOWN"), f"U+{ord(c):04X}")
+                              for i, c in enumerate(line)
+                              if not is_printable_unicode(c)]
+            if non_printables:
+                print(f"Line {line_num} has non-printable Unicode characters:")
+                print(f"  Text: {line.strip()}")
+                for idx, char, name, code in non_printables:
+                    print(f"    - Pos {idx}: '{char}' ({name}, {code})")
+
+# a few problematic unicode characters that we replace with ASCII chars 
+CHAR_REPLACEMENTS = {
+    '\u200b': ' ',   # ZERO WIDTH SPACE
+    '\u200c': ' ',   # ZERO WIDTH NON-JOINER
+    '\u202c': ' ',   # POP DIRECTIONAL FORMATTING
+    '\u00ad': '-',   # SOFT HYPHEN
+    '\u0007': ' ',   # BELL character
+    '\u200e': ' ',   # LEFT-TO-RIGHT MARK
+    '\ue000': ' ',   # PRIVATE USE AREA CHAR
+}
+
+def clean_line(line):
+    cleaned = []
+    for c in line:
+        if c == '\n':
+            cleaned.append(c)  # preserve newline
+        elif c in CHAR_REPLACEMENTS:
+            cleaned.append(CHAR_REPLACEMENTS[c])
+        elif unicodedata.category(c).startswith('C'):
+            cleaned.append(' ')
+        else:
+            cleaned.append(c)
+    return ''.join(cleaned)
+
 # Write out a dataset of episodes to <dataset_dir>
 # podcasts is a list of podcasts, where a podcast has the following structure:
 # podcast = {'title': str, 'episodes': list of episodes}
@@ -88,11 +131,11 @@ def timestamp_to_seconds_float(str_timestamp):
 #                                                               segment = {'text': str, 'start': str, 'end': str}
 # The start and end time stamps should already be converted to Kaldi format, i.e. decimals in seconds (as a string), see above timestamp_to_seconds_float function.
 #
-# We derive a sha1 hash from the filename as episode id and from author+podcast as author id (first 20 chars). Note that the final utterance must be prefixed by the speaker id: 
-# > The main assumption is that the sorting order of utt2spk will stay the same, independently whether you will sort by speaker or utterance. We suggest making the utterances to be prefixed by the speaker ids -- that should resolve your issues 
+# We derive a sha1 hash from the filename as episode id and from author+podcast as author id (first 20 chars). Note that the final utterance must be prefixed by the speaker id:
+# > The main assumption is that the sorting order of utt2spk will stay the same, independently whether you will sort by speaker or utterance. We suggest making the utterances to be prefixed by the speaker ids -- that should resolve your issues
 # see https://groups.google.com/g/kaldi-help/c/n8es2XWVkec?pli=1
 
-def write_kaldi_dataset(podcasts, dataset_dir, use_sox_str=True):
+def write_kaldi_dataset(podcasts, dataset_dir, use_sox_str=True, remove_non_printable_utterances=False):
     ensure_dir(dataset_dir)
     with open(f'{dataset_dir}/text', 'w') as text_file, \
          open(f'{dataset_dir}/segments', 'w') as segments_file, \
@@ -154,12 +197,20 @@ def write_kaldi_dataset(podcasts, dataset_dir, use_sox_str=True):
                       print(check_exclusion_reason(text, exclusion_dict))
                       continue
 
+                  # Check for non-printable Unicode characters
+                  if remove_non_printable_utterances and not all(is_printable_unicode(c) or c == '\n' for c in text):
+                      print(f'Non-printable Unicode character found, ignoring entire segment. Text is:', text)
+                      continue
+
+                  # Clean the text
+                  text = clean_line(text)
+
                   recording_id = f'{speaker_id}_{episode_id}'
                   utterance_id = f'{speaker_id}_{episode_id}_{"%.7d" % i}'
 
-                  # format of the segments file is: <utterance-id> <recording-id> <segment-begin> <segment-end> 
+                  # format of the segments file is: <utterance-id> <recording-id> <segment-begin> <segment-end>
                   segments_file.write(f'{utterance_id} {recording_id} {start} {end}\n')
-                  # format of the text file is: <utterance-id> <text> 
+                  # format of the text file is: <utterance-id> <text>
                   text_file.write(f'{utterance_id} {text}\n')
                   # format of the utt2spk file is: <utterance-id> <speaker-id>
                   utt2spk_file.write(f'{utterance_id} {speaker_id}\n')
@@ -167,9 +218,9 @@ def write_kaldi_dataset(podcasts, dataset_dir, use_sox_str=True):
     print('Wrote Kaldi/Espnet dataset to:', dataset_dir)
 
 # This joins consecutive segments at random, up to a specified max length.
-# The output segment list is shortened and the segments are longer. 
+# The output segment list is shortened and the segments are longer.
 def join_consecutive_segments_randomly(segments, max_length=15):
-    
+
     segments_copy = segments.copy()
     joined_segments = []
 
@@ -186,7 +237,7 @@ def join_consecutive_segments_randomly(segments, max_length=15):
 
         # Merge the chosen number of segments
         segment_text = ' '.join([segment['text'] for segment in segments_copy[i:i+num_segments_to_merge]])
-        
+
         joined_segments.append({
             'start': segments_copy[i]['start'],
             'end': segments_copy[i+num_segments_to_merge-1]['end'],
@@ -205,7 +256,7 @@ def download_file(file_url):
 # Load and parse a JSON file to extract timestamps and text
 def parse_json_segments(json_content):
     data = json.loads(json_content)
-    
+
     segments = []
     for segment in data.get("segments", []):
         segments.append({
@@ -298,7 +349,7 @@ def process_podcast(server_api_url, api_secret_key, title, audio_dataset_locatio
             # If replace_audio_dataset_location isn't empty, change the server reported (absolute) filenames.
             # This is useful if you store the dataset on different servers in different directories, e.g.
             # to change all filenames containing /var/www -> /srv (replace_audio_dataset_location='/var/www', audio_dataset_location='/srv')
-            
+
             if replace_audio_dataset_location != '':
                 episode['cache_audio_file'] = episode['cache_audio_file'].replace(replace_audio_dataset_location, audio_dataset_location)
                 episode['transcript_file'] = episode['transcript_file'].replace(replace_audio_dataset_location, audio_dataset_location)
@@ -317,7 +368,7 @@ def process_podcast(server_api_url, api_secret_key, title, audio_dataset_locatio
                 raise ValueError(f"Unsupported file format: {file_format}")
 
             segments_merged = join_consecutive_segments_randomly(segments)
-            
+
             episode_copy = episode.copy()
             episode_copy['segments'] = segments_merged
 
@@ -330,8 +381,8 @@ def process_podcast(server_api_url, api_secret_key, title, audio_dataset_locatio
 
 # Divide dataset into train/dev/test and start processing the podcasts
 def process(server_api_url, api_secret_key, dev_n=10, test_n=10, test_dev_episodes_threshold=10, language='en',
-                                     audio_dataset_location='', replace_audio_dataset_location='', change_audio_fileending='', file_format='vtt'):
-    
+                                     audio_dataset_location='', replace_audio_dataset_location='', change_audio_fileending='', file_format='vtt', remove_non_printable_utterances=False):
+
     request_url = f"{server_api_url}/get_podcast_list/{language}/{api_secret_key}"
     response = requests.get(request_url)
     podcast_list = response.json()
@@ -357,15 +408,15 @@ def process(server_api_url, api_secret_key, dev_n=10, test_n=10, test_dev_episod
     dev_podcasts = []
     with concurrent.futures.ProcessPoolExecutor() as executor:
         futures = [executor.submit(process_podcast, server_api_url, api_secret_key, elem['title'], audio_dataset_location, replace_audio_dataset_location, change_audio_fileending, file_format) for elem in dev_set]
-    
+
         # Use the as_completed() function to iterate over the completed futures and retrieve their results
         for future in concurrent.futures.as_completed(futures):
             result = future.result()
             dev_podcasts.append(result)
 
-    write_kaldi_dataset(dev_podcasts, 'data/dev/')    
+    write_kaldi_dataset(dev_podcasts, 'data/dev/', remove_non_printable_utterances=remove_non_printable_utterances)
 
-    # create test set in parallel    
+    # create test set in parallel
     test_podcasts = []
     with concurrent.futures.ProcessPoolExecutor() as executor:
         futures = [executor.submit(process_podcast, server_api_url, api_secret_key, elem['title'], audio_dataset_location, replace_audio_dataset_location, change_audio_fileending, file_format) for elem in test_set]
@@ -374,7 +425,7 @@ def process(server_api_url, api_secret_key, dev_n=10, test_n=10, test_dev_episod
             result = future.result()
             test_podcasts.append(result)
 
-    write_kaldi_dataset(test_podcasts, 'data/test/')
+    write_kaldi_dataset(test_podcasts, 'data/test/', remove_non_printable_utterances=remove_non_printable_utterances)
 
     # create train set in parallel
     train_podcasts = []
@@ -393,9 +444,7 @@ def process(server_api_url, api_secret_key, dev_n=10, test_n=10, test_dev_episod
                 future.cancel()
             concurrent.futures.wait(podcast_futures)
             sys.exit(-1)
-    write_kaldi_dataset(train_podcasts, 'data/train/')
-
-
+    write_kaldi_dataset(train_podcasts, 'data/train/', remove_non_printable_utterances=remove_non_printable_utterances)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Create a dataset (Kaldi format) with the server.py API')
@@ -405,6 +454,8 @@ if __name__ == '__main__':
       help='Only sample the test and dev set from shorter podcasts, where len(episodes) is smaller than this value', type=int)
     parser.add_argument('--file-format', choices=['vtt', 'json'], default='vtt', help='Specify the subtitle file format (vtt or json)')
     parser.add_argument('--debug', dest='debug', help='Start with debugging enabled',
+                        action='store_true', default=False)
+    parser.add_argument('--remove-non-printable-utterances', dest='remove_non_printable_utterances', help='Remove utterances with non-printable Unicode characters',
                         action='store_true', default=False)
 
     args = parser.parse_args()
@@ -430,6 +481,7 @@ if __name__ == '__main__':
     print(f"Podcast Language: {language}")
     print(f"Exclusion character list: {ex_file_path_lang}")
     print(f"File format: {file_format}")
+    print(f"Remove non-printable utterances: {args.remove_non_printable_utterances}")
 
     # Confirm before proceeding
     confirm = input("\nDo you want to proceed with dataset creation? (y/n): ").strip().lower()
@@ -440,4 +492,5 @@ if __name__ == '__main__':
     exclusion_dict = create_exclusion_dict(ex_file_path_lang)
 
     process(server_api_url, api_secret_key, args.dev_n, args.test_n, args.test_dev_episodes_threshold, language,
-            audio_dataset_location, replace_audio_dataset_location, change_audio_fileending, file_format=file_format)
+            audio_dataset_location, replace_audio_dataset_location, change_audio_fileending, file_format=file_format, remove_non_printable_utterances=args.remove_non_printable_utterances)
+
