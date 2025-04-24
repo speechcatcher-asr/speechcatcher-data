@@ -69,9 +69,13 @@ Once you have crawled some data, you can start transcribing it. You can also do 
 
 With a pytorch cloud instance for instance, you can setup a worker node quickly with: 
 
-    sudo apt-get install -y wget screen vim htop python3.12-venv
-    pip3 install git+https://github.com/openai/whisper psycopg2-binary requests faster-whisper
+    sudo apt-get install -y wget screen vim htop python3.12-venv git ffmpeg
     git clone https://github.com/speechcatcher-asr/speechcatcher-data
+    cd speechcatcher-data
+    python3 -m venv venv
+    . venv/bin/activate
+    pip3 install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu128
+    pip3 install git+https://github.com/openai/whisper psycopg2-binary requests faster-whisper ffmpeg-python
    
 Then setup config.yaml or simply copy it from your server:
 
@@ -79,14 +83,14 @@ Then setup config.yaml or simply copy it from your server:
 
 You can now start the worker node with (replace 'de' with the langauge you want to transcribe):
 
-    CUDA_VISIBLE_DEVICES=0 python3 worker.py -l de   
+    CUDA_VISIBLE_DEVICES=0 python3 worker.py
+    # wait for the model download to finish before starting more workers on the same machine!
 
 In case you have more than one GPU, simply use the CUDA_VISIBLE_DEVICES variable to assign workers to GPUs:
 
-    CUDA_VISIBLE_DEVICES=1 python3 worker.py -l de
-    # wait for the model download to finish before starting more workers on the same machine
+    CUDA_VISIBLE_DEVICES=1 python3 worker.py
     ...
-    CUDA_VISIBLE_DEVICES=n python3 worker.py -l de
+    CUDA_VISIBLE_DEVICES=n python3 worker.py
 
 You can start two processes per 3090/4090 GPU with 24GB and this saturates the GPU better. Note that you can start with the next steps before completing transcribing all of your data and create bigger and bigger datasets as you go along and transcribe more data. 
 Workers will randomly sample authors and then episodes from that auther. This means that you can create and export datasets early on that are diverse enough to start ASR training and scale it later.
