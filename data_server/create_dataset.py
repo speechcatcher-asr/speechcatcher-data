@@ -457,6 +457,8 @@ if __name__ == '__main__':
                         action='store_true', default=False)
     parser.add_argument('--remove-non-printable-utterances', dest='remove_non_printable_utterances', help='Remove utterances with non-printable Unicode characters',
                         action='store_true', default=False)
+    parser.add_argument('-y', '--yes', dest='auto_confirm', help='Bypass the confirmation prompt',
+                                            action='store_true', default=False)
 
     args = parser.parse_args()
 
@@ -484,10 +486,11 @@ if __name__ == '__main__':
     print(f"Remove non-printable utterances: {args.remove_non_printable_utterances}")
 
     # Confirm before proceeding
-    confirm = input("\nDo you want to proceed with dataset creation? (y/n): ").strip().lower()
-    if confirm != 'y':
-        print("Aborting dataset creation.")
-        sys.exit(-1)
+    if not args.auto_confirm:
+        confirm = input("\nDo you want to proceed with dataset creation? (y/n): ").strip().lower()
+        if confirm != 'y':
+            print("Aborting dataset creation.")
+            sys.exit(-1)
 
     exclusion_dict = create_exclusion_dict(ex_file_path_lang)
 
