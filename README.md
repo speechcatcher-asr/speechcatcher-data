@@ -26,9 +26,9 @@ and execute the following commands (you should change the password):
 
     CREATE USER speechcatcher WITH PASSWORD 'yourpassword42';
     CREATE DATABASE speechcatcher;
+    ALTER DATABASE speechcatcher OWNER TO speechcatcher;
     GRANT ALL PRIVILEGES ON DATABASE speechcatcher TO speechcatcher;
-    GRANT USAGE ON SCHEMA public TO speechcatcher;
-    GRANT CREATE ON SCHEMA public TO speechcatcher;
+    GRANT ALL PRIVILEGES ON SCHEMA public TO speechcatcher;
     \q
 
 Then edit the postgresql.conf file. The file is usually located in /etc/postgresql/<version>/main/postgresql.conf. Replace <version> with your PostgreSQL version number (e.g., 12, 13, etc.):
