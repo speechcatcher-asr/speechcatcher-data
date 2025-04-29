@@ -76,6 +76,7 @@ if __name__ == "__main__":
     parser.add_argument('--media_directory', default=default_config['audio_dataset_location'], help='Directory containing media files')
     parser.add_argument('--download_url', default=default_config['download_destination_url'], help='URL for downloading media files')
     parser.add_argument('--podcast_language', default=default_config['podcast_language'], help='Language of the podcasts')
+    parser.add_argument('--whisper_model', default=default_config['whisper_model'], help='Whisper model to use')
 
     args = parser.parse_args()
     main(args)
