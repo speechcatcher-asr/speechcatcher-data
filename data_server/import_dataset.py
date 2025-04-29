@@ -41,7 +41,7 @@ def import_file_to_db(cursor, conn, file_path, download_url, podcast_language, w
         )
     """, (
         'N/A', 'N/A', 'N/A', -1, filename, podcast_language, 'N/A', 'N/A',
-        'N/A', 'N/A', cache_audio_url, file_path, 'N/A', duration, 'N/A', '{}', whisper_model
+        'N/A', 'N/A', cache_audio_url, file_path, '', duration, 'N/A', '{}', whisper_model
     ))
     conn.commit()
     print(f"Imported {file_path} into the database.")
