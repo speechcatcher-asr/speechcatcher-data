@@ -25,7 +25,7 @@ def file_needs_import(cursor, file_path):
     cursor.execute("SELECT 1 FROM podcasts WHERE cache_audio_file = %s", (file_path,))
     return cursor.fetchone() is None
 
-def import_file_to_db(cursor, file_path, download_url, podcast_language, whisper_model):
+def import_file_to_db(cursor, conn, file_path, download_url, podcast_language, whisper_model):
     filename = os.path.basename(file_path)
     duration = get_file_duration(file_path)
     cache_audio_url = f"{download_url}/{filename}"
@@ -43,6 +43,8 @@ def import_file_to_db(cursor, file_path, download_url, podcast_language, whisper
         'N/A', 'N/A', 'N/A', -1, filename, podcast_language, 'N/A', 'N/A',
         'N/A', 'N/A', cache_audio_url, file_path, 'N/A', duration, 'N/A', '{}', whisper_model
     ))
+    conn.commit()
+    print(f"Imported {file_path} into the database.")
 
 def main(args):
     db_config = {
@@ -59,10 +61,8 @@ def main(args):
     for filename in os.listdir(args.media_directory):
         file_path = os.path.join(args.media_directory, filename)
         if os.path.isfile(file_path) and file_needs_import(cursor, file_path):
-            import_file_to_db(cursor, file_path, args.download_url, args.podcast_language, args.whisper_model)
-            print(f"Imported {file_path} into the database.")
+            import_file_to_db(cursor, conn, file_path, args.download_url, args.podcast_language, args.whisper_model)
 
-    conn.commit()
     cursor.close()
     conn.close()
 
