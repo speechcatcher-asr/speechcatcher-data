@@ -27,14 +27,35 @@ and execute the following commands (you should change the password):
     CREATE USER speechcatcher WITH PASSWORD 'yourpassword42';
     CREATE DATABASE speechcatcher;
     GRANT ALL PRIVILEGES ON DATABASE speechcatcher TO speechcatcher;
+    GRANT USAGE ON SCHEMA public TO speechcatcher;
+    GRANT CREATE ON SCHEMA public TO speechcatcher;
     \q
+
+Then edit the postgresql.conf file. The file is usually located in /etc/postgresql/<version>/main/postgresql.conf. Replace <version> with your PostgreSQL version number (e.g., 12, 13, etc.):
+
+    sudo vim /etc/postgresql/<version>/main/postgresql.conf
+
+Find the line that starts with listen_addresses and change it to:
+
+    listen_addresses = 'localhost'
+
+This setting allows PostgreSQL to listen for incoming connections on localhost.
+
+Now edit the pg_hba.conf file to allow client authentication for the speechcatcher user. The file is usually located in /etc/postgresql/<version>/main/pg_hba.conf:
+
+    sudo vim /etc/postgresql/<version>/main/pg_hba.conf
+
+Add the following line to the end of the file to allow the speechcatcher user to connect using a password:
+
+    host    speechcatcher    speechcatcher    127.0.0.1/32    md5
+
+This line specifies that the speechcatcher user can connect to the speechcatcher database from localhost using MD5 password authentication.
 
 ## How to create the Postgres schema
 
 If you created a new user and database like above then:
 
-    sudo adduser speechcatcher
-    sudo -u speechcatcher psql -d speechcatcher < data_server/schema.psql
+    psql -h 127.0.0.1 -U speechcatcher -d speechcatcher < data_server/schema.psql
 
 ## Config.yaml
 
