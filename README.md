@@ -12,8 +12,8 @@ The data server allows to store and access transcripts. For example when mass do
 
 ## Install requirements
 
-    virtualenv -p python3.10 speechcatcher_data_env
-    source speechcatcher_data_env/bin/activate
+    python3 -m venv venv
+    source venv/bin/activate
     pip3 install -r requirements.txt  
 
 ## Create the speechcatcher database and user
