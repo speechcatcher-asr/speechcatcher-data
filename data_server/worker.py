@@ -7,6 +7,7 @@ import numpy as np
 import io
 import time
 from json import JSONDecodeError
+from urllib.parse import urlparse, urlunparse
 
 from utils import load_config
 from whisper.utils import format_timestamp
@@ -37,6 +38,13 @@ podcast_initial_prompts = {
     'tr': 'Podcast yazarı: {}, Podcast başlığı: {}'
 }
 
+def add_auth_to_url(url, https_user, https_password):
+    if https_user and https_password:
+        parsed_url = urlparse(url)
+        netloc = f"{https_user}:{https_password}@{parsed_url.netloc}"
+        return urlunparse(parsed_url._replace(netloc=netloc))
+    return url
+
 def cancel_work(server, secret_api_key, wid, api_version='apiv1'):
     """ Cancels the work in progress for one task on the server. """
     print(f'Trying to cancel {wid}...')
@@ -58,7 +66,7 @@ def cancel_work_batch(server, api_secret_key, wids, api_version='apiv1'):
     print('Cancelled work in progress:', data)
     return data
 
-def transcribe_loop(server, language, secret_api_key, model_name='small', api_version='apiv1', implementation='original', beam_size=5, use_local_url=False):
+def transcribe_loop(server, language, secret_api_key, model_name='small', api_version='apiv1', implementation='original', beam_size=5, use_local_url=False, https_user='', https_password=''):
     print(f'Loading whisper model {model_name} with {implementation} implementation...')
 
     # Initialize the selected transcription implementation
@@ -102,6 +110,9 @@ def transcribe_loop(server, language, secret_api_key, model_name='small', api_ve
             if use_local_url:
                 assert(data['local_cache_audio_url'] != '')
                 url = data['local_cache_audio_url']
+
+            # Add authentication to the URL if credentials are provided
+            url = add_auth_to_url(url, https_user, https_password)
 
             wid = data['wid']
 
@@ -208,7 +219,7 @@ def upload_results_batch(server, api_version, secret_api_key, wids, results):
 def register_wip_batch(server, api_version, secret_api_key, wids):
     """
     Registers a batch of work items as in progress by sending a POST request to the server.
-    
+
     :param server: URL of the server where the API is hosted.
     :param api_version: API version to access the correct endpoint.
     :param secret_api_key: Secret key for API access.
@@ -227,7 +238,7 @@ def register_wip_batch(server, api_version, secret_api_key, wids):
         print(f"Failed to register work in progress. Status Code: {response.status_code}, Response: {response.text}")
         return {'success': False, 'error': 'Failed to register work in progress with the server.'}
 
-def transcribe_loop_batch(server, language, secret_api_key, model='small', api_version='apiv1', batch_size=5, beam_size=5):
+def transcribe_loop_batch(server, language, secret_api_key, model='small', api_version='apiv1', batch_size=5, beam_size=5, https_user='', https_password=''):
     print(f"Loading Whisper model {model} with batched_transformer implementation")
 
     transcriber = BatchedTransformerWhisper(beam_size=beam_size)
@@ -246,7 +257,7 @@ def transcribe_loop_batch(server, language, secret_api_key, model='small', api_v
                 print("Failed to fetch work batch:", work_batch)
                 continue
 
-            urls = [task['episode_audio_url'] for task in work_batch['tasks']]
+            urls = [add_auth_to_url(task['episode_audio_url'], https_user, https_password) for task in work_batch['tasks']]
             wids = [task['wid'] for task in work_batch['tasks']]
             wip = True
 
@@ -315,7 +326,12 @@ if __name__ == '__main__':
     parser.add_argument('--use_local_url', dest='use_local_url', help='Use local LAN URL instead of global internet URL.', action='store_true', default=False)
     args = parser.parse_args()
 
+    # Load HTTP authentication credentials from config
+    https_user = config.get('https_user', '')
+    https_password = config.get('https_password', '')
+
     if args.implementation == 'batched_transformer':
-        transcribe_loop_batch(args.server, args.language, config['secret_api_key'], model_name=args.model_name, api_version=args.api_version, beam_size=args.beam_size)
+        transcribe_loop_batch(args.server, args.language, config['secret_api_key'], model_name=args.model_name, api_version=args.api_version, beam_size=args.beam_size, https_user=https_user, https_password=https_password)
     else:
-        transcribe_loop(args.server, args.language, config['secret_api_key'], model_name=args.model_name, implementation=args.implementation, api_version=args.api_version, beam_size=args.beam_size, use_local_url=args.use_local_url)
+        transcribe_loop(args.server, args.language, config['secret_api_key'], model_name=args.model_name, implementation=args.implementation, api_version=args.api_version, beam_size=args.beam_size, use_local_url=args.use_local_url, https_user=https_user, https_password=https_password)
+
