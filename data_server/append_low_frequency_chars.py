@@ -14,10 +14,12 @@ def read_char_frequencies(csv_file):
     return char_frequencies
 
 def append_low_frequency_chars(exclusion_chars, char_frequencies, threshold, output_file):
-    with open(output_file, 'a', encoding='utf-8') as file:
+    num_chars_appended = 0
+    with open(output_file, 'a', encoding='utf-8') as outfile:
         for char, frequency in char_frequencies.items():
             if frequency < threshold and char not in exclusion_chars:
-                file.write(char + '\n')
+                num_chars_appended += 1
+                outfile.write(char + '\n')
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Append low-frequency characters to exclusion list.')
@@ -30,6 +32,6 @@ if __name__ == '__main__':
 
     exclusion_chars = read_exclusion_chars(args.exclusion_file)
     char_frequencies = read_char_frequencies(args.csv_file)
-    append_low_frequency_chars(exclusion_chars, char_frequencies, args.threshold, args.output_file)
+    num_chars_appended = append_low_frequency_chars(exclusion_chars, char_frequencies, args.threshold, args.output_file)
 
-    print(f'Low-frequency characters have been appended to {args.output_file}')
+    print(f'{num_chars_appended} low-frequency characters have been appended to {args.output_file}')
