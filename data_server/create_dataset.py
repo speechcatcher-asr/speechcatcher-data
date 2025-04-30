@@ -195,6 +195,9 @@ def write_kaldi_dataset(podcasts, dataset_dir, use_sox_str=True, remove_non_prin
 
                   text = segment['text']
 
+                  if 'Verwandle deine Leidenschaft mit Shopify in ein Business' in text:
+                      continue
+
                   # skip if text contains a bogus char
                   if check_exclusion(text, exclusion_dict):
                       print(f'Exclusion character found, ignoring entire segment. Text is:', text)
