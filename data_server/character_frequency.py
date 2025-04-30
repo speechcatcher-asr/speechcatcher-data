@@ -3,33 +3,9 @@ import argparse
 from collections import Counter
 import csv
 import os
-import unicodedata
 from tqdm import tqdm
 from concurrent.futures import ProcessPoolExecutor, as_completed
-
-# A few problematic Unicode characters that we replace with ASCII chars
-CHAR_REPLACEMENTS = {
-    '\u200b': ' ',   # ZERO WIDTH SPACE
-    '\u200c': ' ',   # ZERO WIDTH NON-JOINER
-    '\u202c': ' ',   # POP DIRECTIONAL FORMATTING
-    '\u00ad': '-',   # SOFT HYPHEN
-    '\u0007': ' ',   # BELL character
-    '\u200e': ' ',   # LEFT-TO-RIGHT MARK
-    '\ue000': ' ',   # PRIVATE USE AREA CHAR
-}
-
-def clean_line(line):
-    cleaned = []
-    for c in line:
-        if c == '\n':
-            cleaned.append(c)  # preserve newline
-        elif c in CHAR_REPLACEMENTS:
-            cleaned.append(CHAR_REPLACEMENTS[c])
-        elif unicodedata.category(c).startswith('C'):
-            cleaned.append(' ')
-        else:
-            cleaned.append(c)
-    return ''.join(cleaned)
+from dataset_filters import *
 
 def process_file(file):
     ignore = ['-->','WEBVTT']

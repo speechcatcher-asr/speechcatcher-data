@@ -18,11 +18,11 @@ def get_file_duration(file_path):
         )
         return float(result.stdout)
     except Exception as e:
-        print(f"Error getting duration for {file_path}: {e}")
+        print(f'Error getting duration for {file_path}: {e}')
         return -1
 
 def file_needs_import(cursor, file_path):
-    cursor.execute("SELECT 1 FROM podcasts WHERE cache_audio_file = %s", (file_path,))
+    cursor.execute('SELECT 1 FROM podcasts WHERE cache_audio_file = %s', (file_path,))
     return cursor.fetchone() is None
 
 def import_file_to_db(cursor, conn, file_path, download_url, podcast_language, whisper_model):
