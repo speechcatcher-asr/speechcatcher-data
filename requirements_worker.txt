@@ -6,3 +6,4 @@ openai-whisper
 faster-whisper
 scipy
 jiwer
+SoMaJo
