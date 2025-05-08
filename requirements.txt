@@ -6,3 +6,4 @@ feedparser
 wget
 requests
 tqdm
+SoMaJo
