@@ -145,12 +145,17 @@ def check_for_degenerate_vtts(vtt_dir, audio_dir='', file_type='vtt', language='
                     assert(new_path != '')
 
                     if new_path != file:
-                        print('Move:', file, '->', new_path)
-                        os.rename(file, new_path)
-                        if p_connection is not None:
-                            print('Execute SQL:', f"UPDATE {sql_table} SET transcript_file = %s WHERE transcript_file = %s" % (new_path, file))
-                            p_cursor.execute(f"UPDATE {sql_table} SET transcript_file = %s WHERE transcript_file = %s", (new_path, file))
-                            p_connection.commit()
+                        try:
+                            print('Move:', file, '->', new_path)
+                            os.rename(file, new_path)
+                            if p_connection is not None:
+                                print('Execute SQL:', f"UPDATE {sql_table} SET transcript_file = %s WHERE transcript_file = %s" % (new_path, file))
+                                p_cursor.execute(f"UPDATE {sql_table} SET transcript_file = %s WHERE transcript_file = %s", (new_path, file))
+                                p_connection.commit()
+                        except OSError as e:
+                            print(f"WARNING! File operation failed: {e}")
+                        except Exception as e:
+                            print(f"WARNING! Database operation failed: {e}")
 
     all_files_len = float(len(files))
     degen_files_len = float(len(degen_files))
