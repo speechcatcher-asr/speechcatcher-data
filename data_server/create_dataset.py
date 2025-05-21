@@ -200,7 +200,7 @@ def write_kaldi_dataset(podcasts, dataset_dir, use_sox_str=True, remove_non_prin
 
 # This joins consecutive segments at random, up to a specified max length.
 # The output segment list is shortened and the segments are longer.
-def join_consecutive_segments_randomly(segments, max_length=15):
+def join_consecutive_segments_randomly(segments, max_num_segments=15, max_time_segment=None):
 
     segments_copy = segments.copy()
     joined_segments = []
@@ -208,13 +208,24 @@ def join_consecutive_segments_randomly(segments, max_length=15):
     i = 0
     max_i = len(segments_copy)
     while i < len(segments_copy):
-        num_segments_to_merge = random.randint(1, max_length)
+        num_segments_to_merge = random.randint(1, max_num_segments)
 
         if i+num_segments_to_merge > max_i:
           num_segments_to_merge = max_i - i
 
         if num_segments_to_merge == 0:
             break
+
+        # Check if merging these segments would exceed max_time_segment
+        if max_time_segment is not None:
+            total_time = segments_copy[i+num_segments_to_merge-1]['end'] - segments_copy[i]['start']
+            if total_time > max_time_segment:
+                # Reduce the number of segments to merge to fit within max_time_segment
+                while num_segments_to_merge > 1:
+                    num_segments_to_merge -= 1
+                    total_time = segments_copy[i+num_segments_to_merge-1]['end'] - segments_copy[i]['start']
+                    if total_time <= max_time_segment:
+                        break
 
         # Merge the chosen number of segments
         segment_text = ' '.join([segment['text'] for segment in segments_copy[i:i+num_segments_to_merge]])
@@ -293,15 +304,15 @@ def parse_vtt_segments(vtt_content, ignore_repeat_lines=3):
     return segments
 
 # process_podcast wrapper to catch exceptions in process_podcast
-def process_podcast_wrapper(server_api_url, api_secret_key, elem_title, audio_dataset_location, replace_audio_dataset_location, change_audio_fileending, file_format):
+def process_podcast_wrapper(server_api_url, api_secret_key, elem_title, audio_dataset_location, replace_audio_dataset_location, change_audio_fileending, file_format, max_num_segments, max_time_segment):
     try:
-        return process_podcast(server_api_url, api_secret_key, elem_title, audio_dataset_location, replace_audio_dataset_location, change_audio_fileending, file_format)
+        return process_podcast(server_api_url, api_secret_key, elem_title, audio_dataset_location, replace_audio_dataset_location, change_audio_fileending, file_format, max_num_segments, max_time_segment)
     except:
         print('Warning: error in ', elem_title, 'ignoring entire podcast...')
         traceback.print_exc()
 
 # Process all episodes of a particular podcast
-def process_podcast(server_api_url, api_secret_key, title, audio_dataset_location='', replace_audio_dataset_location='', change_audio_fileending='', file_format='vtt'):
+def process_podcast(server_api_url, api_secret_key, title, audio_dataset_location='', replace_audio_dataset_location='', change_audio_fileending='', file_format='vtt', max_num_segments=15, max_time_segment=None):
 
     request_url = f"{server_api_url}/get_episode_list/{api_secret_key}"
     data = {'podcast_title': title}
@@ -363,7 +374,7 @@ def process_podcast(server_api_url, api_secret_key, title, audio_dataset_locatio
             else:
                 raise ValueError(f"Unsupported file format: {file_format}")
 
-            segments_merged = join_consecutive_segments_randomly(segments)
+            segments_merged = join_consecutive_segments_randomly(segments, max_num_segments, max_time_segment)
 
             episode_copy = episode.copy()
             episode_copy['segments'] = segments_merged
@@ -377,7 +388,7 @@ def process_podcast(server_api_url, api_secret_key, title, audio_dataset_locatio
 
 # Divide dataset into train/dev/test and start processing the podcasts
 def process(server_api_url, api_secret_key, dev_n=10, test_n=10, test_dev_episodes_threshold=10, language='en',
-                                     audio_dataset_location='', replace_audio_dataset_location='', change_audio_fileending='', file_format='vtt', remove_non_printable_utterances=False):
+                                     audio_dataset_location='', replace_audio_dataset_location='', change_audio_fileending='', file_format='vtt', remove_non_printable_utterances=False, max_num_segments=15, max_time_segment=None):
 
     request_url = f"{server_api_url}/get_podcast_list/{language}/{api_secret_key}"
     response = requests.get(request_url)
@@ -403,7 +414,7 @@ def process(server_api_url, api_secret_key, dev_n=10, test_n=10, test_dev_episod
     # create dev set in parallel
     dev_podcasts = []
     with concurrent.futures.ProcessPoolExecutor() as executor:
-        futures = [executor.submit(process_podcast, server_api_url, api_secret_key, elem['title'], audio_dataset_location, replace_audio_dataset_location, change_audio_fileending, file_format) for elem in dev_set]
+        futures = [executor.submit(process_podcast, server_api_url, api_secret_key, elem['title'], audio_dataset_location, replace_audio_dataset_location, change_audio_fileending, file_format, max_num_segments, max_time_segment) for elem in dev_set]
 
         # Use the as_completed() function to iterate over the completed futures and retrieve their results
         for future in concurrent.futures.as_completed(futures):
@@ -415,7 +426,7 @@ def process(server_api_url, api_secret_key, dev_n=10, test_n=10, test_dev_episod
     # create test set in parallel
     test_podcasts = []
     with concurrent.futures.ProcessPoolExecutor() as executor:
-        futures = [executor.submit(process_podcast, server_api_url, api_secret_key, elem['title'], audio_dataset_location, replace_audio_dataset_location, change_audio_fileending, file_format) for elem in test_set]
+        futures = [executor.submit(process_podcast, server_api_url, api_secret_key, elem['title'], audio_dataset_location, replace_audio_dataset_location, change_audio_fileending, file_format, max_num_segments, max_time_segment) for elem in test_set]
 
         for future in concurrent.futures.as_completed(futures):
             result = future.result()
@@ -428,7 +439,7 @@ def process(server_api_url, api_secret_key, dev_n=10, test_n=10, test_dev_episod
 
     with concurrent.futures.ProcessPoolExecutor() as executor:
         podcast_futures = [executor.submit(process_podcast_wrapper, server_api_url, api_secret_key, elem['title'],
-                           audio_dataset_location, replace_audio_dataset_location, change_audio_fileending, file_format) for elem in train_set]
+                           audio_dataset_location, replace_audio_dataset_location, change_audio_fileending, file_format, max_num_segments, max_time_segment) for elem in train_set]
         try:
             for future in concurrent.futures.as_completed(podcast_futures):
                 podcast = future.result()
@@ -453,6 +464,8 @@ if __name__ == '__main__':
                         action='store_true', default=False)
     parser.add_argument('--remove-non-printable-utterances', dest='remove_non_printable_utterances', help='Remove utterances with non-printable Unicode characters',
                         action='store_true', default=False)
+    parser.add_argument('--max-num-segments', default=15, dest='max_num_segments', help='Maximum number of segments to join consecutively', type=int)
+    parser.add_argument('--max-time-segment', default=None, dest='max_time_segment', help='Maximum time in seconds for a combined segment', type=float)
     parser.add_argument('-y', '--yes', dest='auto_confirm', help='Bypass the confirmation prompt',
                                             action='store_true', default=False)
 
@@ -480,6 +493,8 @@ if __name__ == '__main__':
     print(f"Exclusion character list: {ex_file_path_lang}")
     print(f"File format: {file_format}")
     print(f"Remove non-printable utterances: {args.remove_non_printable_utterances}")
+    print(f"Max number of segments to join: {args.max_num_segments}")
+    print(f"Max time for a combined segment: {args.max_time_segment}")
 
     # Confirm before proceeding
     if not args.auto_confirm:
@@ -491,5 +506,4 @@ if __name__ == '__main__':
     exclusion_dict = create_exclusion_dict(ex_file_path_lang)
 
     process(server_api_url, api_secret_key, args.dev_n, args.test_n, args.test_dev_episodes_threshold, language,
-            audio_dataset_location, replace_audio_dataset_location, change_audio_fileending, file_format=file_format, remove_non_printable_utterances=args.remove_non_printable_utterances)
-
+            audio_dataset_location, replace_audio_dataset_location, change_audio_fileending, file_format=file_format, remove_non_printable_utterances=args.remove_non_printable_utterances, max_num_segments=args.max_num_segments, max_time_segment=args.max_time_segment)
