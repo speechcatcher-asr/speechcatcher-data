@@ -37,6 +37,12 @@ def find_media_file(base_path):
             return candidate
     return None
 
+def has_audio(input_video):
+    """Check if the media file has an audio stream."""
+    cmd = ["ffprobe", "-i", input_video, "-show_streams", "-select_streams", "a", "-v", "quiet"]
+    result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    return len(result.stdout) > 0
+
 def check_for_degenerate_vtts(vtt_dir, audio_dir='', file_type='vtt', language='de',
                               possibly_corrupted_outfile='possibly_corrupted.txt',
                               timestamps_tsv='timestamps.tsv',
@@ -54,6 +60,8 @@ def check_for_degenerate_vtts(vtt_dir, audio_dir='', file_type='vtt', language='
         tokenizer = simple_tokenizer
 
     degen_files = []
+
+    no_audio_files = 0
 
     for file in tqdm(files):
         lines = {}
@@ -92,6 +100,18 @@ def check_for_degenerate_vtts(vtt_dir, audio_dir='', file_type='vtt', language='
                 print(f'{file}', f'{last_timestamp=}', f'{ffprobe_timestamp=}')
                 with open(timestamps_tsv, 'a') as timestamps_tsv_out:
                     timestamps_tsv_out.write(f'{file}\t{last_timestamp}\t{ffprobe_timestamp}\n')
+
+                # Check for audio
+                if not has_audio(input_audio):
+                    print(f"No audio found in {input_audio}")
+                    no_audio_files += 1
+                    if not simulate:
+                        try:
+                            print('Execute SQL:', f"DELETE FROM {sql_table} WHERE transcript_file = %s" % (file))
+                            p_cursor.execute(f"DELETE FROM {sql_table} WHERE transcript_file = %s", (file,))
+                            p_connection.commit()
+                        except Exception as e:
+                            print(f"WARNING! Database operation failed: {e}")
             else:
                 print(f"No valid media file found for {base_path}")
 
@@ -164,8 +184,10 @@ def check_for_degenerate_vtts(vtt_dir, audio_dir='', file_type='vtt', language='
     print(f'Possibly corrupted files: about {round(degen_percent, 3)}%')
     if simulate:
         print(f'Number of files that would be changed: {len(degen_files)}')
+        print(f'DB entries that would be deleted because the media file does not contain any audio: {no_audio_files}')
     else:
         print(f'Number of files that were flagged as corrupted: {len(degen_files)}')
+        print(f'DB entries that were deleted because the media file did not contain any audio: {no_audio_files}')
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Check vtts for unusual repetitions and vocabulary.')
@@ -186,4 +208,3 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     check_for_degenerate_vtts(args.vtt_dir, args.audio_dir, file_type=args.file_type, language=args.language, p_connection=p_connection, p_cursor=p_cursor, simulate=args.simulate, compression_threshold=args.compression_threshold)
-
