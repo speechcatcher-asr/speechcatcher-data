@@ -72,12 +72,12 @@ def check_for_degenerate_vtts(vtt_dir, audio_dir='', file_type='vtt', language='
         for file in tqdm(audio_files):
             # Check for audio
             if not has_audio(file):
-                print(f"No audio found in {input_audio}")
-                print('SQL:', f"DELETE FROM {sql_table} WHERE cache_file = %s" % (file))
+                print(f"No audio found in {file}")
+                print('SQL:', f"DELETE FROM {sql_table} WHERE cache_audio_file = %s" % (file))
                 no_audio_files += 1
                 if not simulate:
                     try:
-                        p_cursor.execute(f"DELETE FROM {sql_table} WHERE cache_file = %s", (file,))
+                        p_cursor.execute(f"DELETE FROM {sql_table} WHERE cache_audio_file = %s", (file,))
                         p_connection.commit()
                     except Exception as e:
                         print(f"WARNING! Database operation failed: {e}")
