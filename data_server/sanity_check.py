@@ -30,8 +30,8 @@ def calculate_compression_ratio(text):
 
 def find_media_file(base_path):
     """Find a media file with a common audio/video extension."""
-    extensions = ['', '.mp3', '.mp4', '.aac', '.flac', '.wav', '.ogg', '.m4a', '.mov', '.avi', '.webm']
-    for ext in extensions:
+    media_extensions = ['', '.mp3', '.mp4', '.aac', '.flac', '.wav', '.ogg', '.m4a', '.mov', '.avi', '.webm']
+    for ext in media_extensions:
         candidate = base_path + ext
         if os.path.exists(candidate):
             return candidate
@@ -48,6 +48,11 @@ def check_for_degenerate_vtts(vtt_dir, audio_dir='', file_type='vtt', language='
                               timestamps_tsv='timestamps.tsv',
                               p_connection=None, p_cursor=None, simulate=False, compression_threshold=None):
     files = glob.glob(f'{vtt_dir}/*.{file_type}')
+    
+    if audio_dir='':
+        audio_files = []
+    else:
+        audio_files = glob.glob(f'{audio_dir}/*')
 
     ignore = ['-->','WEBVTT']
     vocab = {}
@@ -62,6 +67,20 @@ def check_for_degenerate_vtts(vtt_dir, audio_dir='', file_type='vtt', language='
     degen_files = []
 
     no_audio_files = 0
+
+    if audio_dir != '':
+        for file in tqdm(audio_files):
+            # Check for audio
+            if not has_audio(file):
+                print(f"No audio found in {input_audio}")
+                print('SQL:', f"DELETE FROM {sql_table} WHERE cache_file = %s" % (file))
+                no_audio_files += 1
+                if not simulate:
+                    try:
+                        p_cursor.execute(f"DELETE FROM {sql_table} WHERE cache_file = %s", (file,))
+                        p_connection.commit()
+                    except Exception as e:
+                        print(f"WARNING! Database operation failed: {e}")
 
     for file in tqdm(files):
         lines = {}
@@ -100,18 +119,6 @@ def check_for_degenerate_vtts(vtt_dir, audio_dir='', file_type='vtt', language='
                 print(f'{file}', f'{last_timestamp=}', f'{ffprobe_timestamp=}')
                 with open(timestamps_tsv, 'a') as timestamps_tsv_out:
                     timestamps_tsv_out.write(f'{file}\t{last_timestamp}\t{ffprobe_timestamp}\n')
-
-                # Check for audio
-                if not has_audio(input_audio):
-                    print(f"No audio found in {input_audio}")
-                    no_audio_files += 1
-                    if not simulate:
-                        try:
-                            print('Execute SQL:', f"DELETE FROM {sql_table} WHERE transcript_file = %s" % (file))
-                            p_cursor.execute(f"DELETE FROM {sql_table} WHERE transcript_file = %s", (file,))
-                            p_connection.commit()
-                        except Exception as e:
-                            print(f"WARNING! Database operation failed: {e}")
             else:
                 print(f"No valid media file found for {base_path}")
 
