@@ -49,7 +49,7 @@ def check_for_degenerate_vtts(vtt_dir, audio_dir='', file_type='vtt', language='
                               p_connection=None, p_cursor=None, simulate=False, compression_threshold=None):
     files = glob.glob(f'{vtt_dir}/*.{file_type}')
     
-    if audio_dir='':
+    if audio_dir=='':
         audio_files = []
     else:
         audio_files = glob.glob(f'{audio_dir}/*')
