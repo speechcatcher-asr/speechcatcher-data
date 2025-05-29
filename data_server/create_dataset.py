@@ -218,12 +218,12 @@ def join_consecutive_segments_randomly(segments, max_num_segments=15, max_time_s
 
         # Check if merging these segments would exceed max_time_segment
         if max_time_segment is not None:
-            total_time = segments_copy[i+num_segments_to_merge-1]['end'] - segments_copy[i]['start']
+            total_time = timestamp_to_seconds_float(segments_copy[i+num_segments_to_merge-1]['end']) - timestamp_to_seconds_float(segments_copy[i]['start'])
             if total_time > max_time_segment:
                 # Reduce the number of segments to merge to fit within max_time_segment
                 while num_segments_to_merge > 1:
                     num_segments_to_merge -= 1
-                    total_time = segments_copy[i+num_segments_to_merge-1]['end'] - segments_copy[i]['start']
+                    total_time = timestamp_to_seconds_float(segments_copy[i+num_segments_to_merge-1]['end']) - timestamp_to_seconds_float(segments_copy[i]['start'])
                     if total_time <= max_time_segment:
                         break
 
