@@ -7,9 +7,12 @@ import uuid
 import time
 from collections import defaultdict
 
+
 from flask import Flask, jsonify, request
 from werkzeug.serving import WSGIRequestHandler
 
+from redis_session import RedisSessionDict
+from training_session import TrainingSession
 from utils import load_config, connect_to_db, ensure_dir  
 
 p_connection, p_cursor = None, None
@@ -29,6 +32,13 @@ podcast_columns = 'podcast_episode_id, podcast_title, episode_title, published_d
             'authors, language, description, keywords, episode_url, episode_audio_url, ' \
                         'cache_audio_url, cache_audio_file, transcript_file, duration'
 podcast_columns_list = podcast_columns.split(', ')
+
+# must be outside __main__ for gunicorn
+config = load_config()
+api_secret_key = config["secret_api_key"]
+vtt_dir = config["vtt_dir"]
+WSGIRequestHandler.protocol_version = 'HTTP/1.1'
+p_connection, p_cursor = connect_to_db(database=config["database"], user=config["user"], password=config["password"], host=config["host"], port=config["port"])
 
 def make_local_url(my_url, config):
     if 'replace_local_audio_url' in config:
@@ -636,107 +646,9 @@ def cancel_work_batch(api_access_key):
 # POST   /apiv1/end_training_session/<session_id>/<api_access_key>
 # -----------------------------------------------------------------------------
 
-
-# abstraction class for a training session with the dataset
-class TrainingSession:
-    """In‑memory representation of one client training run."""
-
-    def __init__(self, *, language: str, batch_size: int, order: str = "asc",
-                 min_duration: float = 0.0, max_duration: float | None = None):
-        self.session_id: str = uuid.uuid4().hex
-        self.language = language
-        self.batch_size = batch_size
-        self.order = order  # 'asc' or 'desc'
-        self.min_duration = min_duration
-        self.max_duration = max_duration
-        self._lock = threading.Lock()
-
-        # Pull dataset from PostgreSQL – once – and sort for curriculum.
-        where_clauses = ["transcript_file <> %s", "language = %s", "duration >= %s"]
-        params: list = ["", language, min_duration]
-        if max_duration is not None:
-            where_clauses.append("duration <= %s")
-            params.append(max_duration)
-        where_sql = " AND ".join(where_clauses)
-
-        p_cursor.execute(
-            f"SELECT {podcast_columns} FROM {sql_table} WHERE " + where_sql
-        , tuple(params))
-        records = p_cursor.fetchall()
-
-        # Record ➜ dict for readability
-        self.dataset: list[dict] = [dict(zip(podcast_columns_list, r)) for r in records]
-
-        # Curriculum sort
-        self.dataset.sort(key=lambda x: x["duration"], reverse=(order == "desc"))
-
-        # Add helper URL field the same way you do in the existing API
-        for item in self.dataset:
-            item["transcript_file_url"] = item["transcript_file"].replace(
-                transcript_file_replace_prefix, "https://")
-            item["local_cache_audio_url"] = make_local_url(item["cache_audio_url"], config)
-
-        self.num_samples = len(self.dataset)
-        self.current_epoch = 0
-        self.next_index = 0  # pointer into dataset for the *next* batch
-
-        # book‑keeping: which (epoch, batch_id) have been *served* and which have
-        # been *marked done* by the client
-        self.batches_served: set[tuple[int, int]] = set()
-        self.batches_done: set[tuple[int, int]] = set()
-        self.logs: list[dict] = []  # {timestamp, level, message}
-
-    # Public API used by the Flask end‑points below – guarded by lock
-    def get_next_batch(self):
-        with self._lock:
-            if self.num_samples == 0:
-                raise RuntimeError("Dataset is empty – nothing to train on.")
-
-            # Wrap to new epoch if we reached the end
-            if self.next_index >= self.num_samples:
-                self.current_epoch += 1
-                self.next_index = 0
-
-            start_idx = self.next_index
-            end_idx = min(self.next_index + self.batch_size, self.num_samples)
-            batch = self.dataset[start_idx:end_idx]
-
-            # Batch‑ID is simply the starting dataset index for fast look‑up
-            batch_id = start_idx
-            self.batches_served.add((self.current_epoch, batch_id))
-            self.next_index = end_idx
-            return batch_id, self.current_epoch, batch
-
-    def mark_batch_done(self, epoch: int, batch_id: int):
-        with self._lock:
-            if (epoch, batch_id) not in self.batches_served:
-                raise ValueError("batch_id/epoch unknown for this session or not served yet")
-            self.batches_done.add((epoch, batch_id))
-
-    def append_log(self, level: str, message: str):
-        with self._lock:
-            self.logs.append({
-                "ts": time.time(),
-                "level": level,
-                "msg": message[:4000],  # defensive max length
-            })
-
-    def status(self):
-        with self._lock:
-            return {
-                "session_id": self.session_id,
-                "language": self.language,
-                "batch_size": self.batch_size,
-                "order": self.order,
-                "current_epoch": self.current_epoch,
-                "num_samples": self.num_samples,
-                "num_batches_served": len(self.batches_served),
-                "num_batches_done": len(self.batches_done),
-                "logs": self.logs[-25:],  # last 25 log lines only
-            }
-
 # training session and locking
-_training_sessions: dict[str, TrainingSession] = {}
+#_training_sessions: dict[str, TrainingSession] = {}
+_training_sessions = RedisSessionDict(redis_url=config["redis_url"])
 _registry_lock = threading.Lock()
 
 # Helper – fetch a session or raise a 404‑style error
@@ -769,9 +681,16 @@ def start_training_session(api_access_key):
         sess = TrainingSession(
             language=language,
             batch_size=batch_size,
+            p_cursor=p_cursor,
             order=order,
             min_duration=min_duration,
             max_duration=max_duration,
+            config=config,
+            podcast_columns=podcast_columns,
+            podcast_columns_list=podcast_columns_list,
+            sql_table=sql_table,
+            transcript_file_replace_prefix=transcript_file_replace_prefix,
+            make_local_url=make_local_url,
         )
     except Exception as exc:
         traceback.print_exc()
@@ -852,13 +771,6 @@ def end_training_session(session_id, api_access_key):
     with _registry_lock:
         removed = _training_sessions.pop(session_id, None)
     return jsonify({"success": bool(removed)})
-
-# must be outside __main__ for gunicorn
-config = load_config()
-api_secret_key = config["secret_api_key"]
-vtt_dir = config["vtt_dir"]
-WSGIRequestHandler.protocol_version = 'HTTP/1.1'
-p_connection, p_cursor = connect_to_db(database=config["database"], user=config["user"], password=config["password"], host=config["host"], port=config["port"])
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Work distribution server for mass transcription jobs')
