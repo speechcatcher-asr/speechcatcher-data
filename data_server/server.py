@@ -2,6 +2,10 @@ import argparse
 import flask
 import traceback
 import sys
+import threading
+import uuid
+import time
+from collections import defaultdict
 
 from flask import Flask, jsonify, request
 from werkzeug.serving import WSGIRequestHandler
@@ -609,6 +613,245 @@ def cancel_work_batch(api_access_key):
     except Exception as e:
         p_cursor.execute('ROLLBACK')
         return jsonify({'success': False, 'error': str(e)})
+
+# -----------------------------------------------------------------------------
+# Training‑session (curriculum‑learning) support 
+# -----------------------------------------------------------------------------
+# * Keeps lightweight, in‑memory `TrainingSession` objects (one per client).
+# * Supports **curriculum learning** by sorting the whole (filtered) episode list
+#   by duration once at session creation time.
+# * Remembers which batches have already been served **per epoch** so the same
+#   batch will not be delivered twice.
+# * Provides simple logging & metrics collection that clients can append to.
+# * Is completely stateless across restarts (sessions vanish if you restart the
+#   process – exactly what you asked for).
+#
+# End‑points
+# ----------
+# POST   /apiv1/start_training_session/<api_access_key>
+# GET    /apiv1/get_next_batch/<session_id>/<api_access_key>
+# POST   /apiv1/mark_batch_done/<session_id>/<batch_id>/<api_access_key>
+# POST   /apiv1/log/<session_id>/<api_access_key>
+# GET    /apiv1/session_status/<session_id>/<api_access_key>
+# POST   /apiv1/end_training_session/<session_id>/<api_access_key>
+# -----------------------------------------------------------------------------
+
+
+# abstraction class for a training session with the dataset
+class TrainingSession:
+    """In‑memory representation of one client training run."""
+
+    def __init__(self, *, language: str, batch_size: int, order: str = "asc",
+                 min_duration: float = 0.0, max_duration: float | None = None):
+        self.session_id: str = uuid.uuid4().hex
+        self.language = language
+        self.batch_size = batch_size
+        self.order = order  # 'asc' or 'desc'
+        self.min_duration = min_duration
+        self.max_duration = max_duration
+        self._lock = threading.Lock()
+
+        # Pull dataset from PostgreSQL – once – and sort for curriculum.
+        where_clauses = ["transcript_file <> %s", "language = %s", "duration >= %s"]
+        params: list = ["", language, min_duration]
+        if max_duration is not None:
+            where_clauses.append("duration <= %s")
+            params.append(max_duration)
+        where_sql = " AND ".join(where_clauses)
+
+        p_cursor.execute(
+            f"SELECT {podcast_columns} FROM {sql_table} WHERE " + where_sql
+        , tuple(params))
+        records = p_cursor.fetchall()
+
+        # Record ➜ dict for readability
+        self.dataset: list[dict] = [dict(zip(podcast_columns_list, r)) for r in records]
+
+        # Curriculum sort
+        self.dataset.sort(key=lambda x: x["duration"], reverse=(order == "desc"))
+
+        # Add helper URL field the same way you do in the existing API
+        for item in self.dataset:
+            item["transcript_file_url"] = item["transcript_file"].replace(
+                transcript_file_replace_prefix, "https://")
+            item["local_cache_audio_url"] = make_local_url(item["cache_audio_url"], config)
+
+        self.num_samples = len(self.dataset)
+        self.current_epoch = 0
+        self.next_index = 0  # pointer into dataset for the *next* batch
+
+        # book‑keeping: which (epoch, batch_id) have been *served* and which have
+        # been *marked done* by the client
+        self.batches_served: set[tuple[int, int]] = set()
+        self.batches_done: set[tuple[int, int]] = set()
+        self.logs: list[dict] = []  # {timestamp, level, message}
+
+    # Public API used by the Flask end‑points below – guarded by lock
+    def get_next_batch(self):
+        with self._lock:
+            if self.num_samples == 0:
+                raise RuntimeError("Dataset is empty – nothing to train on.")
+
+            # Wrap to new epoch if we reached the end
+            if self.next_index >= self.num_samples:
+                self.current_epoch += 1
+                self.next_index = 0
+
+            start_idx = self.next_index
+            end_idx = min(self.next_index + self.batch_size, self.num_samples)
+            batch = self.dataset[start_idx:end_idx]
+
+            # Batch‑ID is simply the starting dataset index for fast look‑up
+            batch_id = start_idx
+            self.batches_served.add((self.current_epoch, batch_id))
+            self.next_index = end_idx
+            return batch_id, self.current_epoch, batch
+
+    def mark_batch_done(self, epoch: int, batch_id: int):
+        with self._lock:
+            if (epoch, batch_id) not in self.batches_served:
+                raise ValueError("batch_id/epoch unknown for this session or not served yet")
+            self.batches_done.add((epoch, batch_id))
+
+    def append_log(self, level: str, message: str):
+        with self._lock:
+            self.logs.append({
+                "ts": time.time(),
+                "level": level,
+                "msg": message[:4000],  # defensive max length
+            })
+
+    def status(self):
+        with self._lock:
+            return {
+                "session_id": self.session_id,
+                "language": self.language,
+                "batch_size": self.batch_size,
+                "order": self.order,
+                "current_epoch": self.current_epoch,
+                "num_samples": self.num_samples,
+                "num_batches_served": len(self.batches_served),
+                "num_batches_done": len(self.batches_done),
+                "logs": self.logs[-25:],  # last 25 log lines only
+            }
+
+# training session and locking
+_training_sessions: dict[str, TrainingSession] = {}
+_registry_lock = threading.Lock()
+
+# Helper – fetch a session or raise a 404‑style error
+
+def _get_session_or_404(session_id: str) -> TrainingSession:
+    with _registry_lock:
+        sess = _training_sessions.get(session_id)
+    if sess is None:
+        flask.abort(flask.make_response(flask.jsonify({"success": False, "error": "unknown session_id"}), 404))
+    return sess
+
+# ----------------------------------------------------------------------------
+# flask routes for training session management
+# ----------------------------------------------------------------------------
+
+@app.route(api_version + "/start_training_session/<api_access_key>", methods=["POST"])
+def start_training_session(api_access_key):
+    if api_secret_key != api_access_key:
+        return jsonify({"success": False, "error": "api_access_key invalid"}), 401
+
+    payload = request.get_json(force=True, silent=True) or {}
+    language = payload.get("language", "en")
+    batch_size = int(payload.get("batch_size", 8))
+    order = payload.get("order", "asc")
+    min_duration = float(payload.get("min_duration", 0.0))
+    max_duration = payload.get("max_duration")
+    max_duration = float(max_duration) if max_duration is not None else None
+
+    try:
+        sess = TrainingSession(
+            language=language,
+            batch_size=batch_size,
+            order=order,
+            min_duration=min_duration,
+            max_duration=max_duration,
+        )
+    except Exception as exc:
+        traceback.print_exc()
+        return jsonify({"success": False, "error": f"Failed to create session: {exc}"}), 500
+
+    with _registry_lock:
+        _training_sessions[sess.session_id] = sess
+
+    return jsonify({
+        "success": True,
+        "session_id": sess.session_id,
+        "num_samples": sess.num_samples,
+        "batch_size": sess.batch_size,
+        "order": sess.order,
+    })
+
+
+@app.route(api_version + "/get_next_batch/<session_id>/<api_access_key>", methods=["GET"])
+def get_next_batch(session_id, api_access_key):
+    if api_secret_key != api_access_key:
+        return jsonify({"success": False, "error": "api_access_key invalid"}), 401
+
+    sess = _get_session_or_404(session_id)
+    try:
+        batch_id, epoch, batch = sess.get_next_batch()
+    except Exception as exc:
+        return jsonify({"success": False, "error": str(exc)}), 400
+
+    return jsonify({
+        "success": True,
+        "epoch": epoch,
+        "batch_id": batch_id,
+        "batch": batch,
+    })
+
+
+@app.route(api_version + "/mark_batch_done/<session_id>/<int:batch_id>/<api_access_key>", methods=["POST"])
+def mark_batch_done(session_id, batch_id, api_access_key):
+    if api_secret_key != api_access_key:
+        return jsonify({"success": False, "error": "api_access_key invalid"}), 401
+
+    epoch = int(request.args.get("epoch", 0))
+    sess = _get_session_or_404(session_id)
+    try:
+        sess.mark_batch_done(epoch, batch_id)
+    except ValueError as exc:
+        return jsonify({"success": False, "error": str(exc)}), 400
+    return jsonify({"success": True})
+
+
+@app.route(api_version + "/log/<session_id>/<api_access_key>", methods=["POST"])
+def append_log(session_id, api_access_key):
+    if api_secret_key != api_access_key:
+        return jsonify({"success": False, "error": "api_access_key invalid"}), 401
+
+    payload = request.get_json(force=True, silent=True) or {}
+    level = payload.get("level", "INFO")
+    message = payload.get("message", "")
+    sess = _get_session_or_404(session_id)
+    sess.append_log(level, message)
+    return jsonify({"success": True})
+
+
+@app.route(api_version + "/session_status/<session_id>/<api_access_key>", methods=["GET"])
+def session_status(session_id, api_access_key):
+    if api_secret_key != api_access_key:
+        return jsonify({"success": False, "error": "api_access_key invalid"}), 401
+
+    sess = _get_session_or_404(session_id)
+    return jsonify({"success": True, "status": sess.status()})
+
+
+@app.route(api_version + "/end_training_session/<session_id>/<api_access_key>", methods=["POST"])
+def end_training_session(session_id, api_access_key):
+    if api_secret_key != api_access_key:
+        return jsonify({"success": False, "error": "api_access_key invalid"}), 401
+
+    with _registry_lock:
+        removed = _training_sessions.pop(session_id, None)
+    return jsonify({"success": bool(removed)})
 
 # must be outside __main__ for gunicorn
 config = load_config()
