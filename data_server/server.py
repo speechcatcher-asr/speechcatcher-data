@@ -11,8 +11,7 @@ from collections import defaultdict
 from flask import Flask, jsonify, request
 from werkzeug.serving import WSGIRequestHandler
 
-from redis_session import RedisSessionDict
-from training_session import TrainingSession
+from training_session_pg import TrainingSession
 from utils import load_config, connect_to_db, ensure_dir  
 
 p_connection, p_cursor = None, None
@@ -646,22 +645,8 @@ def cancel_work_batch(api_access_key):
 # POST   /apiv1/end_training_session/<session_id>/<api_access_key>
 # -----------------------------------------------------------------------------
 
-# training session and locking
-#_training_sessions: dict[str, TrainingSession] = {}
-_training_sessions = RedisSessionDict(redis_url=config["redis_url"])
-_registry_lock = threading.Lock()
-
-# Helper – fetch a session or raise a 404‑style error
-
-def _get_session_or_404(session_id: str) -> TrainingSession:
-    with _registry_lock:
-        sess = _training_sessions.get(session_id)
-    if sess is None:
-        flask.abort(flask.make_response(flask.jsonify({"success": False, "error": "unknown session_id"}), 404))
-    return sess
-
 # ----------------------------------------------------------------------------
-# flask routes for training session management
+# flask routes for training session management (PostgreSQL-backed)
 # ----------------------------------------------------------------------------
 
 @app.route(api_version + "/start_training_session/<api_access_key>", methods=["POST"])
@@ -672,39 +657,30 @@ def start_training_session(api_access_key):
     payload = request.get_json(force=True, silent=True) or {}
     language = payload.get("language", "en")
     batch_size = int(payload.get("batch_size", 8))
-    order = payload.get("order", "asc")
+    sample_order = payload.get("order", "asc")  # renamed from 'order'
     min_duration = float(payload.get("min_duration", 0.0))
     max_duration = payload.get("max_duration")
     max_duration = float(max_duration) if max_duration is not None else None
 
     try:
-        sess = TrainingSession(
+        sess = TrainingSession.create(
+            p_connection=p_connection,
+            p_cursor=p_cursor,
             language=language,
             batch_size=batch_size,
-            p_cursor=p_cursor,
-            order=order,
+            sample_order=sample_order,
             min_duration=min_duration,
             max_duration=max_duration,
-            config=config,
-            podcast_columns=podcast_columns,
-            podcast_columns_list=podcast_columns_list,
-            sql_table=sql_table,
-            transcript_file_replace_prefix=transcript_file_replace_prefix,
-            make_local_url=make_local_url,
         )
     except Exception as exc:
         traceback.print_exc()
         return jsonify({"success": False, "error": f"Failed to create session: {exc}"}), 500
 
-    with _registry_lock:
-        _training_sessions[sess.session_id] = sess
-
     return jsonify({
         "success": True,
         "session_id": sess.session_id,
-        "num_samples": sess.num_samples,
-        "batch_size": sess.batch_size,
-        "order": sess.order,
+        "batch_size": batch_size,
+        "order": sample_order,
     })
 
 
@@ -713,9 +689,15 @@ def get_next_batch(session_id, api_access_key):
     if api_secret_key != api_access_key:
         return jsonify({"success": False, "error": "api_access_key invalid"}), 401
 
-    sess = _get_session_or_404(session_id)
     try:
-        batch_id, epoch, batch = sess.get_next_batch()
+        sess = TrainingSession(session_id=session_id)
+        batch_id, epoch, batch = sess.get_next_batch(
+            p_connection=p_connection,
+            p_cursor=p_cursor,
+            podcast_table=sql_table,
+            podcast_columns=podcast_columns,
+            podcast_columns_list=podcast_columns_list
+        )
     except Exception as exc:
         return jsonify({"success": False, "error": str(exc)}), 400
 
@@ -733,11 +715,13 @@ def mark_batch_done(session_id, batch_id, api_access_key):
         return jsonify({"success": False, "error": "api_access_key invalid"}), 401
 
     epoch = int(request.args.get("epoch", 0))
-    sess = _get_session_or_404(session_id)
+
     try:
-        sess.mark_batch_done(epoch, batch_id)
-    except ValueError as exc:
+        sess = TrainingSession(session_id=session_id)
+        sess.mark_batch_done(p_connection=p_connection, p_cursor=p_cursor, epoch=epoch, batch_id=batch_id)
+    except Exception as exc:
         return jsonify({"success": False, "error": str(exc)}), 400
+
     return jsonify({"success": True})
 
 
@@ -749,8 +733,13 @@ def append_log(session_id, api_access_key):
     payload = request.get_json(force=True, silent=True) or {}
     level = payload.get("level", "INFO")
     message = payload.get("message", "")
-    sess = _get_session_or_404(session_id)
-    sess.append_log(level, message)
+
+    try:
+        sess = TrainingSession(session_id=session_id)
+        sess.append_log(p_cursor=p_cursor, p_connection=p_connection, level=level, message=message)
+    except Exception as exc:
+        return jsonify({"success": False, "error": str(exc)}), 500
+
     return jsonify({"success": True})
 
 
@@ -759,8 +748,13 @@ def session_status(session_id, api_access_key):
     if api_secret_key != api_access_key:
         return jsonify({"success": False, "error": "api_access_key invalid"}), 401
 
-    sess = _get_session_or_404(session_id)
-    return jsonify({"success": True, "status": sess.status()})
+    try:
+        sess = TrainingSession(session_id=session_id)
+        status = sess.status(p_cursor)
+    except Exception as exc:
+        return jsonify({"success": False, "error": str(exc)}), 404
+
+    return jsonify({"success": True, "status": status})
 
 
 @app.route(api_version + "/end_training_session/<session_id>/<api_access_key>", methods=["POST"])
@@ -768,22 +762,11 @@ def end_training_session(session_id, api_access_key):
     if api_secret_key != api_access_key:
         return jsonify({"success": False, "error": "api_access_key invalid"}), 401
 
-    with _registry_lock:
-        removed = _training_sessions.pop(session_id, None)
-    return jsonify({"success": bool(removed)})
+    try:
+        sess = TrainingSession(session_id=session_id)
+        sess.delete(p_cursor)
+    except Exception as exc:
+        return jsonify({"success": False, "error": str(exc)}), 404
 
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Work distribution server for mass transcription jobs')
-    parser.add_argument('-l', '--listen-host', default='127.0.0.1', dest='host', help='Host address to listen on.')
-    parser.add_argument('-p', '--port', default=6000, dest='port', help='Port to listen on.', type=int)
-    parser.add_argument('--debug', dest='debug', help='Start with debugging enabled',
-                        action='store_true', default=False)
+    return jsonify({"success": True})
 
-    args = parser.parse_args()
-
-    print('Warning, you are using the builtin flask server. For deployment, you should run a gunicorn server. See start_wsgi.sh')
-
-    if args.debug:
-        app.debug = True
-
-    app.run(host=args.host, port=args.port, threaded=True, use_reloader=False, use_debugger=False)
