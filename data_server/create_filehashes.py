@@ -20,7 +20,7 @@ def compute_sha256(filepath):
         return None
 
 
-def ensure_filehashes_table(cursor):
+def ensure_filehashes_table(cursor, conn):
     """Create filehashes table and indexes if they do not exist."""
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS filehashes (
@@ -35,6 +35,8 @@ def ensure_filehashes_table(cursor):
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_filehashes_file_hash ON filehashes (file_hash);")
     cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_filehashes_file_path ON filehashes (file_path);")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_filehashes_episode_id ON filehashes (podcast_episode_id);")
+
+    conn.commit()  # ✅ Persist schema changes
 
 
 def fetch_podcast_files(cursor):
@@ -110,7 +112,7 @@ def main():
     conn, cursor = connect_to_db(config["database"], config["user"], config["password"],
                                  host=config["host"], port=config["port"])
 
-    ensure_filehashes_table(cursor)
+    ensure_filehashes_table(cursor, conn)
 
     if args.check:
         tqdm.write("Mode: Integrity check")
@@ -131,26 +133,30 @@ def main():
 
     file_records = fetch_podcast_files(cursor)
     existing_hashes = fetch_existing_hashes(cursor)
-    new_entries = []
 
-    for podcast_episode_id, audio_path, transcript_path in tqdm(file_records, desc="Scanning podcast entries", unit="episode"):
+    inserted = 0
+    total_inserted = 0
+
+    for podcast_episode_id, audio_path, transcript_path in tqdm(file_records, desc="Processing files", unit="episode"):
         for path, ftype in [(audio_path, 'audio'), (transcript_path, 'transcript')]:
             if not path or path in existing_hashes:
                 continue
             hashval = compute_sha256(path)
             if hashval:
-                new_entries.append((podcast_episode_id, path, hashval, ftype))
+                insert_filehash(cursor, podcast_episode_id, path, hashval, ftype)
+                existing_hashes[path] = hashval  # prevent duplicate hashing in same run
+                inserted += 1
+                total_inserted += 1
 
-    tqdm.write(f"🔍 Found {len(new_entries)} new files to hash and insert into database.")
+                if inserted >= args.batch_size:
+                    conn.commit()
+                    inserted = 0
 
-    for i, entry in enumerate(tqdm(new_entries, desc="Storing new file hashes", unit="file")):
-        insert_filehash(cursor, *entry)
-        if (i + 1) % args.batch_size == 0:
-            conn.commit()
+    if inserted > 0:
+        conn.commit()
 
-    conn.commit()  # final flush
     conn.close()
-    tqdm.write("✅ All new file hashes stored successfully.")
+    tqdm.write(f"✅ Stored {total_inserted} new file hashes.")
 
 
 if __name__ == "__main__":
