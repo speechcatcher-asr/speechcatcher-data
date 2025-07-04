@@ -33,12 +33,24 @@ CREATE UNLOGGED TABLE training_sessions (
     created_at TIMESTAMPTZ DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS filehashes (
+    filehash_id SERIAL PRIMARY KEY,
+    podcast_episode_id INTEGER REFERENCES podcasts(podcast_episode_id),
+    file_path TEXT UNIQUE,
+    file_hash TEXT,
+    file_type VARCHAR(32),
+    last_verified TIMESTAMP DEFAULT NOW()
+);
 
 CREATE INDEX IF NOT EXISTS podcast_title_index ON podcasts (podcast_title);
 CREATE INDEX IF NOT EXISTS episode_url_index ON podcasts (episode_url);
 CREATE INDEX IF NOT EXISTS cache_audio_url_index ON podcasts (cache_audio_url);
 CREATE INDEX IF NOT EXISTS cache_audio_file_index ON podcasts (cache_audio_file);
 CREATE INDEX IF NOT EXISTS model_index ON podcasts (model);
+
+CREATE INDEX IF NOT EXISTS idx_filehashes_file_hash ON filehashes (file_hash);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_filehashes_file_path ON filehashes (file_path);
+CREATE INDEX IF NOT EXISTS idx_filehashes_episode_id ON filehashes (podcast_episode_id);
 
 GRANT ALL PRIVILEGES ON TABLE podcasts TO speechcatcher;
 GRANT ALL PRIVILEGES ON TABLE training_sessions TO speechcatcher;
