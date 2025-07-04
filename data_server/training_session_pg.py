@@ -54,7 +54,7 @@ class TrainingSession:
             raise ValueError("Invalid session ID")
         self.meta = dict(zip([desc[0] for desc in p_cursor.description], row))
 
-    def get_next_batch(self, p_cursor, p_connection, podcast_table, podcast_columns, podcast_columns_list):
+    def get_next_batch(self, p_cursor, p_connection, podcast_table, podcast_columns, podcast_columns_list, dedup_by_hash: bool = True):
         self._load_metadata(p_cursor)
         lang = self.meta["language"]
         sample_order = self.meta["sample_order"]
@@ -70,22 +70,36 @@ class TrainingSession:
             next_index = self.meta["next_index"]
             current_epoch = self.meta["current_epoch"]
 
-        where_clauses = ["transcript_file <> %s", "language = %s", "duration >= %s"]
+        # Build WHERE clause
+        where_clauses = ["p.transcript_file <> %s", "p.language = %s", "p.duration >= %s"]
         params = ["", lang, min_dur]
         if max_dur is not None:
-            where_clauses.append("duration <= %s")
+            where_clauses.append("p.duration <= %s")
             params.append(max_dur)
         where_sql = " AND ".join(where_clauses)
 
-        order_sql = f"ORDER BY duration {'DESC' if sample_order == 'desc' else 'ASC'}"
-        query = f"""
-            SELECT {podcast_columns}
-            FROM {podcast_table}
-            WHERE {where_sql}
-            {order_sql}
-            LIMIT %s OFFSET %s
-        """
+        # ORDER and LIMIT/OFFSET
+        order_sql = f"ORDER BY p.duration {'DESC' if sample_order == 'desc' else 'ASC'}"
+        limit_offset_sql = "LIMIT %s OFFSET %s"
         params += [batch_size, next_index]
+
+        if dedup_by_hash:
+            query = f"""
+                SELECT DISTINCT ON (fh.file_hash) {podcast_columns}
+                FROM {podcast_table} p
+                JOIN filehashes fh ON fh.podcast_episode_id = p.podcast_episode_id
+                WHERE {where_sql}
+                {order_sql}
+                {limit_offset_sql}
+            """
+        else:
+            query = f"""
+                SELECT {podcast_columns}
+                FROM {podcast_table} p
+                WHERE {where_sql}
+                {order_sql}
+                {limit_offset_sql}
+            """
 
         p_cursor.execute(query, tuple(params))
         rows = p_cursor.fetchall()
@@ -103,6 +117,7 @@ class TrainingSession:
         self._update_state(p_cursor, p_connection, current_epoch, next_index)
 
         return batch_id, current_epoch, batch
+
 
     def _update_state(self, p_cursor, p_connection, epoch, next_index):
         if self.backend == "redis":
