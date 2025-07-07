@@ -78,26 +78,42 @@ class TrainingSession:
             params.append(max_dur)
         where_sql = " AND ".join(where_clauses)
 
-        # ORDER and LIMIT/OFFSET
-        order_sql = f"ORDER BY p.duration {'DESC' if sample_order == 'desc' else 'ASC'}"
+        # Qualify selected columns
+        qualified_columns = ", ".join([f"p.{col.strip()}" for col in podcast_columns.split(",")])
+        duration_sort = 'DESC' if sample_order == 'desc' else 'ASC'
+
+        # Pagination
         limit_offset_sql = "LIMIT %s OFFSET %s"
         params += [batch_size, next_index]
 
         if dedup_by_hash:
+            # The following query performs global deduplication of podcast episodes based on file content:
+            #
+            # - Uses DISTINCT ON (fh.file_hash) to ensure only one episode is selected per unique audio file
+            # - Sorts first by p.duration, then by p.podcast_episode_id to ensure deterministic selection
+            # - Joins filehashes via file_path = cache_audio_file (both absolute paths, guaranteed unique)
+            # - Returns exactly one row per file hash → ensures no duplicate media in a batch
+            # - Applies pagination (LIMIT/OFFSET) only after deduplication
+            #
+            # This ensures curriculum-style sampling (shortest audio first) and stable batching.
             query = f"""
-                SELECT DISTINCT ON (fh.file_hash) {podcast_columns}
-                FROM {podcast_table} p
-                JOIN filehashes fh ON fh.podcast_episode_id = p.podcast_episode_id
-                WHERE {where_sql}
-                {order_sql}
+                SELECT *
+                FROM (
+                    SELECT DISTINCT ON (fh.file_hash) {qualified_columns}, p.duration AS dur
+                    FROM {podcast_table} p
+                    JOIN filehashes fh ON fh.file_path = p.cache_audio_file
+                    WHERE {where_sql}
+                    ORDER BY fh.file_hash, p.duration {duration_sort}, p.podcast_episode_id
+                ) AS deduped
+                ORDER BY deduped.dur {duration_sort}
                 {limit_offset_sql}
             """
         else:
             query = f"""
-                SELECT {podcast_columns}
+                SELECT {qualified_columns}
                 FROM {podcast_table} p
                 WHERE {where_sql}
-                {order_sql}
+                ORDER BY p.duration {duration_sort}
                 {limit_offset_sql}
             """
 
@@ -117,7 +133,6 @@ class TrainingSession:
         self._update_state(p_cursor, p_connection, current_epoch, next_index)
 
         return batch_id, current_epoch, batch
-
 
     def _update_state(self, p_cursor, p_connection, epoch, next_index):
         if self.backend == "redis":
