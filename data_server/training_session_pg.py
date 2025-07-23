@@ -71,8 +71,8 @@ class TrainingSession:
             current_epoch = self.meta["current_epoch"]
 
         # Build WHERE clause
-        where_clauses = ["p.transcript_file <> %s", "p.language = %s", "p.duration >= %s"]
-        params = ["", lang, min_dur]
+        where_clauses = ["p.transcript_file <> %s", "p.transcript_file <> %s", "p.language = %s", "p.duration >= %s"]
+        params = ["", "in_progress" , lang, min_dur]
         if max_dur is not None:
             where_clauses.append("p.duration <= %s")
             params.append(max_dur)
@@ -92,7 +92,7 @@ class TrainingSession:
             # - Uses DISTINCT ON (fh.file_hash) to ensure only one episode is selected per unique audio file
             # - Sorts first by p.duration, then by p.podcast_episode_id to ensure deterministic selection
             # - Joins filehashes via file_path = cache_audio_file (both absolute paths, guaranteed unique)
-            # - Returns exactly one row per file hash → ensures no duplicate media in a batch
+            # - Returns exactly one row per file hash -> ensures no duplicate media in a batch
             # - Applies pagination (LIMIT/OFFSET) only after deduplication
             #
             # This ensures curriculum-style sampling (shortest audio first) and stable batching.
