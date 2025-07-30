@@ -6,6 +6,7 @@ import shutil
 import json
 import yaml
 import requests
+import time
 from urllib.parse import urljoin
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
@@ -29,16 +30,27 @@ def download_file(url, destination):
     # Ensure the directory exists
     os.makedirs(os.path.dirname(destination), exist_ok=True)
 
-    # Use aria2c to download the file with up to 8 retries
-    result = subprocess.run(['aria2c', '--max-tries=8', '-x', '16', '-s', '16', url, '-o', destination], capture_output=True, text=True)
+    max_retries = 8
+    for attempt in range(1, max_retries + 1):
+        print(f"Download attempt {attempt} of {max_retries}...")
 
-    if result.returncode == 0:
-        print(f"Successfully downloaded and stored file at {destination}")
-        return True
-    else:
-        print(f"Failed to download file from {url}")
-        print("Error:", result.stderr)
-        return False
+        result = subprocess.run([
+            'aria2c', '--allow-overwrite=true', '--auto-file-renaming=false',
+            '--max-tries=1', '-x', '16', '-s', '16', url, '-o', destination
+        ], capture_output=True, text=True)
+
+        if result.returncode == 0:
+            print(f"Successfully downloaded and stored file at {destination}")
+            return True
+        else:
+            print(f"Attempt {attempt} failed: {result.stderr.strip()}")
+            if attempt < max_retries:
+                sleep_time = 2 ** (attempt - 1)  # Exponential backoff: 1, 2, 4, 8...
+                print(f"Retrying in {sleep_time} seconds...")
+                time.sleep(sleep_time)
+
+    print(f"Failed to download file from {url} after {max_retries} attempts.")
+    return False
 
 def main():
     # Load config.yaml
@@ -135,6 +147,8 @@ def main():
     print(f"Fetched {len(entries)} entries from the remote server.")
 
     for entry in entries:
+        print('entry:',entry)
+
         cache_audio_file = entry['cache_audio_file']
         transcript_file = entry['transcript_file']
 
@@ -155,14 +169,14 @@ def main():
             break
 
         local_audio_path = os.path.join(dest_path, os.path.basename(cache_audio_file))
-        local_vtt_path = os.path.join(dest_path, 'vtts', os.path.splitext(os.path.basename(cache_audio_file))[0] + '.vtt')
+        local_vtt_path = os.path.join(dest_path, 'vtts', os.path.basename(cache_audio_file) + '.vtt')
 
         print(f"Destination for audio file: {local_audio_path}")
         print(f"Destination for VTT file: {local_vtt_path}")
 
         # Download the cache media file and VTT file
         cache_audio_url = entry['cache_audio_url']
-        vtt_url = urljoin(cache_audio_url.rsplit('/', 1)[0] + '/', 'vtts/' + os.path.splitext(os.path.basename(cache_audio_url))[0] + '.vtt')
+        vtt_url = entry['transcript_file_url']
 
         if download_file(cache_audio_url, local_audio_path) and download_file(vtt_url, local_vtt_path):
             # Update the entry's file paths
@@ -181,7 +195,7 @@ def main():
                 entry['podcast_title'], entry['episode_title'], entry['published_date'], entry['retrieval_time'],
                 entry['authors'], entry['language'], entry['description'], entry['keywords'], entry['episode_url'],
                 entry['episode_audio_url'], entry['cache_audio_url'], entry['cache_audio_file'], entry['transcript_file'],
-                entry['duration'], entry['type'], entry['episode_json'], entry['model']
+                entry['duration'], entry['type'] if 'type' in entry else 'N/A', entry['episode_json'] if 'episode_json' in entry else '{}', entry['model'] if 'model' in entry else 'N/A'
             )
 
             print(f"Executing SQL: {cursor.mogrify(sql, data).decode('utf-8')}")
