@@ -4,7 +4,11 @@ import os
 import psycopg2
 import shutil
 import json
+import yaml
+import requests
 from urllib.parse import urljoin
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 def load_schema(cursor):
     schema_file = "schema.psql"
@@ -25,8 +29,8 @@ def download_file(url, destination):
     # Ensure the directory exists
     os.makedirs(os.path.dirname(destination), exist_ok=True)
 
-    # Use aria2c to download the file with up to 5 retries
-    result = subprocess.run(['aria2c', '--max-tries=5', '-x', '16', '-s', '16', url, '-o', destination], capture_output=True, text=True)
+    # Use aria2c to download the file with up to 8 retries
+    result = subprocess.run(['aria2c', '--max-tries=8', '-x', '16', '-s', '16', url, '-o', destination], capture_output=True, text=True)
 
     if result.returncode == 0:
         print(f"Successfully downloaded and stored file at {destination}")
@@ -96,22 +100,45 @@ def main():
         else:
             print("Simulation: Would commit schema changes to the database.")
 
-    # Fetch entries from the remote server
-    print(f"Fetching entries from {remote_api_url}")
-    response = subprocess.run(['curl', f"{remote_api_url}/apiv1/get_every_episode_list/{api_access_key}"], capture_output=True, text=True)
+    # Set up a session with retry strategy
+    session = requests.Session()
+    retries = Retry(
+        total=8,
+        backoff_factor=1,  # wait 1s, 2s, 4s, etc. between retries
+        status_forcelist=[429, 500, 502, 503, 504],
+        allowed_methods=["GET"]
+    )
+    adapter = HTTPAdapter(max_retries=retries)
+    session.mount("http://", adapter)
+    session.mount("https://", adapter)
 
-    if response.returncode != 0:
-        print("Failed to fetch entries from the remote server.")
+    # Fetch entries from the remote server
+    endpoint = f"get_every_episode_list/{api_access_key}"
+    remote_fetch_api_url = urljoin(remote_api_url.rstrip('/') + '/', endpoint)
+
+    print(f"Fetching entries from {remote_fetch_api_url}")
+
+    try:
+        response = session.get(remote_fetch_api_url, timeout=30)
+        response.raise_for_status()
+    except requests.exceptions.RequestException as e:
+        print(f"Failed to fetch entries: {e}")
         return
 
-    entries = json.loads(response.stdout)
+    try:
+        entries = response.json()
+    except json.JSONDecodeError:
+        print("Error: Response is not valid JSON.")
+        print("Raw response was:", response.text[:500])
+        return
+
     print(f"Fetched {len(entries)} entries from the remote server.")
 
     for entry in entries:
         cache_audio_file = entry['cache_audio_file']
         transcript_file = entry['transcript_file']
 
-        if not arg_include_files_without_transcripts:
+        if not include_files_without_transcripts:
             if not transcript_file or transcript_file == '' or transcript_file == 'in_progress':
                 print('Not cloning media file without transcript:', cache_audio_file)
                 continue
