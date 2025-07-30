@@ -191,11 +191,25 @@ def main():
                     cache_audio_file, transcript_file, duration, type, episode_json, model
                 ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             '''
+
             data = (
-                entry['podcast_title'], entry['episode_title'], entry['published_date'], entry['retrieval_time'],
-                entry['authors'], entry['language'], entry['description'], entry['keywords'], entry['episode_url'],
-                entry['episode_audio_url'], entry['cache_audio_url'], entry['cache_audio_file'], entry['transcript_file'],
-                entry['duration'], entry['type'] if 'type' in entry else 'N/A', entry['episode_json'] if 'episode_json' in entry else '{}', entry['model'] if 'model' in entry else 'N/A'
+                entry['podcast_title'],
+                entry['episode_title'],
+                entry['published_date'],
+                entry['retrieval_time'],
+                entry['authors'],
+                entry['language'],
+                entry['description'],
+                entry['keywords'],
+                entry['episode_url'],
+                entry['episode_audio_url'],
+                entry['cache_audio_url'],
+                entry['cache_audio_file'],
+                entry['transcript_file'],
+                entry['duration'],
+                entry.get('type', 'N/A'),
+                json.dumps(entry.get('episode_json', {})),
+                entry.get('model', 'N/A')
             )
 
             print(f"Executing SQL: {cursor.mogrify(sql, data).decode('utf-8')}")
