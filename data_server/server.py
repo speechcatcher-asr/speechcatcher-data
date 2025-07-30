@@ -29,7 +29,7 @@ transcript_file_replace_prefix = '/var/www/'
 
 podcast_columns = 'podcast_episode_id, podcast_title, episode_title, published_date, retrieval_time, ' \
             'authors, language, description, keywords, episode_url, episode_audio_url, ' \
-                        'cache_audio_url, cache_audio_file, transcript_file, duration'
+                        'cache_audio_url, cache_audio_file, transcript_file, duration, type, episode_json, model'
 podcast_columns_list = podcast_columns.split(', ')
 
 # must be outside __main__ for gunicorn
@@ -770,3 +770,12 @@ def end_training_session(session_id, api_access_key):
 
     return jsonify({"success": True})
 
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='Run the Flask development server.')
+    parser.add_argument('--host', type=str, default='127.0.0.1', help='Host address to bind the server to.')
+    parser.add_argument('--port', type=int, default=6000, help='Port to bind the server to.')
+    parser.add_argument('--debug', action='store_true', help='Enable debug mode.')
+
+    args = parser.parse_args()
+
+    app.run(host=args.host, port=args.port, debug=args.debug)
