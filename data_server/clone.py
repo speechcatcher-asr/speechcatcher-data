@@ -3,6 +3,7 @@ import subprocess
 import os
 import psycopg2
 import shutil
+import json
 from urllib.parse import urljoin
 
 def load_schema(cursor):
@@ -24,8 +25,8 @@ def download_file(url, destination):
     # Ensure the directory exists
     os.makedirs(os.path.dirname(destination), exist_ok=True)
 
-    # Use aria2c to download the file with up to 3 retries
-    result = subprocess.run(['aria2c', '--max-tries=3', '-x', '16', '-s', '16', url, '-o', destination], capture_output=True, text=True)
+    # Use aria2c to download the file with up to 5 retries
+    result = subprocess.run(['aria2c', '--max-tries=5', '-x', '16', '-s', '16', url, '-o', destination], capture_output=True, text=True)
 
     if result.returncode == 0:
         print(f"Successfully downloaded and stored file at {destination}")
@@ -36,33 +37,55 @@ def download_file(url, destination):
         return False
 
 def main():
+    # Load config.yaml
+    with open(os.path.join(os.path.dirname(__file__), '../config.yaml'), 'r') as config_file:
+        config = yaml.safe_load(config_file)
+
+    # Set defaults from YAML
+    default_api_url = config.get("server_api_url", "").rstrip('/')
+    default_api_key = config.get("secret_api_key", "")
+    default_db_name = config.get("database", "speechcatcher")
+    default_db_user = config.get("user", "speechcatcher")
+    default_db_password = config.get("password", "")
+    default_db_host = config.get("host", "localhost")
+    default_db_port = config.get("port", "5432")
+
+    # Argument parser setup
     parser = argparse.ArgumentParser(description="Clone podcast entries from a remote server to a local database.")
-    parser.add_argument("--remote-api-url", required=True, help="URL of the remote server API")
-    parser.add_argument("--local-cache-destinations", required=True, help="Comma-separated local cache destination paths")
-    parser.add_argument("--http-base-paths", required=True, help="Comma-separated HTTP base paths corresponding to local destinations")
-    parser.add_argument("--api-access-key", required=True, help="API access key for the remote server")
+    parser.add_argument("--remote-api-url", default=default_api_url, help="URL of the remote server API")
+    parser.add_argument("--local-cache-destinations", default="", help="Comma-separated local cache destination paths")
+    parser.add_argument("--http-base-paths", default="", help="Comma-separated HTTP base paths corresponding to local destinations")
+    parser.add_argument("--api-access-key", default=default_api_key, help="API access key for the remote server")
+    parser.add_argument("--db-name", default=default_db_name, help="Database name")
+    parser.add_argument("--db-user", default=default_db_user, help="Database user")
+    parser.add_argument("--db-password", default=default_db_password, help="Database password")
+    parser.add_argument("--db-host", default=default_db_host, help="Database host")
+    parser.add_argument("--db-port", default=default_db_port, help="Database port")
     parser.add_argument("--simulate", action="store_true", help="Simulate the process without committing to the database")
-    parser.add_argument("--include-files-without-transcripts", action="store_true", help="Simulate the process without committing to the database")
+    parser.add_argument("--include-files-without-transcripts", action="store_true", help="Include files even if transcripts are missing")
 
     args = parser.parse_args()
 
+    # Unpack arguments
     remote_api_url = args.remote_api_url
     local_cache_destinations = args.local_cache_destinations.split(',')
     http_base_paths = args.http_base_paths.split(',')
     api_access_key = args.api_access_key
     simulate = args.simulate
+    include_files_without_transcripts = args.include_files_without_transcripts
 
+    # Validate path count
     assert len(local_cache_destinations) == len(http_base_paths), "Number of local cache destinations must match number of HTTP base paths."
 
-    # Connect to the local database
+    # Connect to the local database using the arguments
     conn = psycopg2.connect(
-        dbname="speechcatcher",
-        user="speechcatcher",
-        password="yourpassword",
-        host="localhost"
+        dbname=args.db_name,
+        user=args.db_user,
+        password=args.db_password,
+        host=args.db_host,
+        port=args.db_port,
     )
     cursor = conn.cursor()
-
     # Load the schema if the table doesn't exist
     cursor.execute("SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'podcasts')")
     if not cursor.fetchone()[0]:
@@ -81,7 +104,6 @@ def main():
         print("Failed to fetch entries from the remote server.")
         return
 
-    import json
     entries = json.loads(response.stdout)
     print(f"Fetched {len(entries)} entries from the remote server.")
 
