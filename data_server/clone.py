@@ -35,8 +35,15 @@ def download_file(url, destination):
         print(f"Download attempt {attempt} of {max_retries}...")
 
         result = subprocess.run([
-            'aria2c', '--allow-overwrite=true', '--auto-file-renaming=false',
-            '--max-tries=1', '-x', '16', '-s', '16', url, '-o', destination
+            'aria2c',
+            '--allow-overwrite=true',
+            '--auto-file-renaming=false',
+            '--max-tries=1',
+            '-x', '16',
+            '-s', '16',
+            url,
+            '--dir', os.path.dirname(destination),
+            '-o', os.path.basename(destination)
         ], capture_output=True, text=True)
 
         if result.returncode == 0:
