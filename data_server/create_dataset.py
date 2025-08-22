@@ -304,32 +304,32 @@ def parse_vtt_segments(vtt_content, ignore_repeat_lines=3):
     return segments
 
 # process_podcast wrapper to catch exceptions in process_podcast
-def process_podcast_wrapper(server_api_url, api_secret_key, elem_title, audio_dataset_location, replace_audio_dataset_location, change_audio_fileending, file_format, max_num_segments, max_time_segment):
+def process_podcast_wrapper(server_api_url, api_secret_key, elem_title, language, audio_dataset_location, replace_audio_dataset_location, change_audio_fileending, file_format, max_num_segments, max_time_segment):
     try:
-        return process_podcast(server_api_url, api_secret_key, elem_title, audio_dataset_location, replace_audio_dataset_location, change_audio_fileending, file_format, max_num_segments, max_time_segment)
+        return process_podcast(server_api_url, api_secret_key, elem_title, language, audio_dataset_location, replace_audio_dataset_location, change_audio_fileending, file_format, max_num_segments, max_time_segment)
     except:
         print('Warning: error in ', elem_title, 'ignoring entire podcast...')
         traceback.print_exc()
 
 # Process all episodes of a particular podcast
-def process_podcast(server_api_url, api_secret_key, title, audio_dataset_location='', replace_audio_dataset_location='', change_audio_fileending='', file_format='vtt', max_num_segments=15, max_time_segment=None):
+def process_podcast(server_api_url, api_secret_key, title, language, audio_dataset_location='', replace_audio_dataset_location='', change_audio_fileending='', file_format='vtt', max_num_segments=15, max_time_segment=None):
 
     request_url = f"{server_api_url}/get_episode_list/{api_secret_key}"
     data = {'podcast_title': title}
 
-    print('server_api_url:', request_url)
+    print('server_api_url:', request_url, 'for', data)
 
     response = requests.post(request_url, data=data, timeout=120)
-
     episode_list = response.json()
-
-    #print(episode_list)
 
     episodes = []
 
     for episode in episode_list:
         if 'episode_title' not in episode:
-            print('WARNING: Malformed episode (skipping):', episode)
+            print('WARNING: Malformed episode, no episode title (skipping):', episode)
+            continue
+        if 'language' not in episode:
+            print('WARNING: Malformed episode, no language field (skipping):', episode)
             continue
         try:
             print('parsing:', episode['episode_title'])
@@ -342,6 +342,11 @@ def process_podcast(server_api_url, api_secret_key, title, audio_dataset_locatio
             if episode['transcript_file_url']=='':
                 print('Warning, ignoring empty episode url.')
                 continue
+
+            if not language == '*':
+                if not episode['language'] == language:
+                    print(f"Warning, ignoring episode with language={episode['language']} (different from: {language})")
+                    continue
 
             file_content = None
             url = episode['transcript_file_url']
@@ -414,7 +419,7 @@ def process(server_api_url, api_secret_key, dev_n=10, test_n=10, test_dev_episod
     # create dev set in parallel
     dev_podcasts = []
     with concurrent.futures.ProcessPoolExecutor() as executor:
-        futures = [executor.submit(process_podcast, server_api_url, api_secret_key, elem['title'], audio_dataset_location, replace_audio_dataset_location, change_audio_fileending, file_format, max_num_segments, max_time_segment) for elem in dev_set]
+        futures = [executor.submit(process_podcast, server_api_url, api_secret_key, elem['title'], language, audio_dataset_location, replace_audio_dataset_location, change_audio_fileending, file_format, max_num_segments, max_time_segment) for elem in dev_set]
 
         # Use the as_completed() function to iterate over the completed futures and retrieve their results
         for future in concurrent.futures.as_completed(futures):
@@ -426,7 +431,7 @@ def process(server_api_url, api_secret_key, dev_n=10, test_n=10, test_dev_episod
     # create test set in parallel
     test_podcasts = []
     with concurrent.futures.ProcessPoolExecutor() as executor:
-        futures = [executor.submit(process_podcast, server_api_url, api_secret_key, elem['title'], audio_dataset_location, replace_audio_dataset_location, change_audio_fileending, file_format, max_num_segments, max_time_segment) for elem in test_set]
+        futures = [executor.submit(process_podcast, server_api_url, api_secret_key, elem['title'], language, audio_dataset_location, replace_audio_dataset_location, change_audio_fileending, file_format, max_num_segments, max_time_segment) for elem in test_set]
 
         for future in concurrent.futures.as_completed(futures):
             result = future.result()
@@ -438,7 +443,7 @@ def process(server_api_url, api_secret_key, dev_n=10, test_n=10, test_dev_episod
     train_podcasts = []
 
     with concurrent.futures.ProcessPoolExecutor() as executor:
-        podcast_futures = [executor.submit(process_podcast_wrapper, server_api_url, api_secret_key, elem['title'],
+        podcast_futures = [executor.submit(process_podcast_wrapper, server_api_url, api_secret_key, elem['title'], language,
                            audio_dataset_location, replace_audio_dataset_location, change_audio_fileending, file_format, max_num_segments, max_time_segment) for elem in train_set]
         try:
             for future in concurrent.futures.as_completed(podcast_futures):
