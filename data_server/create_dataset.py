@@ -96,20 +96,109 @@ def find_non_printable_unicode_lines(file_path):
                 for idx, char, name, code in non_printables:
                     print(f"    - Pos {idx}: '{char}' ({name}, {code})")
 
-# Write out a dataset of episodes to <dataset_dir>
-# podcasts is a list of podcasts, where a podcast has the following structure:
-# podcast = {'title': str, 'episodes': list of episodes}
-#                           |
-#                           episode = {'transcript_file': str, 'segments': list of segments, 'authors': str}
-#                                                               |
-#                                                               segment = {'text': str, 'start': str, 'end': str}
-# The start and end time stamps should already be converted to Kaldi format, i.e. decimals in seconds (as a string), see above timestamp_to_seconds_float function.
-#
-# We derive a sha1 hash from the filename as episode id and from author+podcast as author id (first 20 chars). Note that the final utterance must be prefixed by the speaker id:
-# > The main assumption is that the sorting order of utt2spk will stay the same, independently whether you will sort by speaker or utterance. We suggest making the utterances to be prefixed by the speaker ids -- that should resolve your issues
-# see https://groups.google.com/g/kaldi-help/c/n8es2XWVkec?pli=1
+def write_tsv_dataset(podcasts, tsv_path, remove_non_printable_utterances=False):
+    """
+    Write a TSV dataset with the following format:
+
+      {uniq_id}\t{text}\t{wav_path}\t{start_time}\t{end_time}
+
+    Notes:
+    - uniq_id: we reuse the Kaldi-style utterance_id to guarantee uniqueness
+    - wav_path: absolute path to the audio file (no pipes; consumers expect real file paths)
+    - start/end: seconds (floats)
+    - Applies the same exclusion / cleaning rules as write_kaldi_dataset
+    """
+    ensure_dir(os.path.dirname(tsv_path))
+
+    with open(tsv_path, 'w', encoding='utf-8') as tsv_file:
+        for podcast in podcasts:
+            for episode in podcast['episodes']:
+                try:
+                    filename = episode['cache_audio_file']
+                    # We may want to clamp segment ends to file duration just like in Kaldi
+                    timestamp = get_duration(filename)
+                    max_seconds = timestamp_to_seconds_float(timestamp)
+                except:
+                    print('Couldnt get duration from', episode.get('cache_audio_file', '<unknown>'),
+                          'warning: ignoring entire file.')
+                    continue
+
+                vtt_file = episode.get('transcript_file', '')
+
+                if '/corrupted/' in vtt_file:
+                    print(vtt_file, 'vtt file is corrputed, skipping!')
+                    continue
+
+                if not episode.get('segments'):
+                    print(vtt_file, 'no segments in transcript (after filtering), skipping!')
+                    continue
+
+                author = episode['authors'] + '_' + podcast['title']
+                episode_id = hashlib.sha1(filename.encode()).hexdigest()[:20]
+                speaker_id = hashlib.sha1(author.encode()).hexdigest()[:20]
+
+                for i, segment in enumerate(episode['segments']):
+                    # convert timestamps if necessary
+                    start = segment['start'] if isinstance(segment['start'], float) else timestamp_to_seconds_float(segment['start'])
+                    end = segment['end'] if isinstance(segment['end'], float) else timestamp_to_seconds_float(segment['end'])
+
+                    if start > max_seconds:
+                        print(f'Warning, overflow in transcript START for {filename}... skipping this and following segments.')
+                        break
+
+                    if end > max_seconds:
+                        print(f'Warning, overflow in transcript END for {filename}... clamping to file duration.')
+                        end = max_seconds
+
+                    if end <= start:
+                        print('End timestamp now underflows start, ignoring entire segment')
+                        break
+
+                    text = segment['text']
+
+                    if 'Verwandle deine Leidenschaft mit Shopify in ein Business' in text:
+                        continue
+
+                    # skip if text contains a bogus char
+                    if check_exclusion(text, exclusion_dict):
+                        print('Exclusion character found, ignoring entire segment. Text is:', text)
+                        print(check_exclusion_reason(text, exclusion_dict))
+                        continue
+
+                    # Check for non-printable Unicode characters
+                    if remove_non_printable_utterances and not all(is_printable_unicode(c) or c == '\n' for c in text):
+                        print('Non-printable Unicode character found, ignoring entire segment. Text is:', text)
+                        continue
+
+                    # Clean the text (same normalization as Kaldi)
+                    text = clean_line(text)
+
+                    # uniq_id consistent with Kaldi utterance_id (guaranteed unique)
+                    utterance_id = f'{speaker_id}_{episode_id}_{"%.7d" % i}'
+
+                    # For TSV, we must write the actual file path (no pipes)
+                    wav_path = filename
+
+                    # Write: uniq_id<TAB>text<TAB>wav_path<TAB>start<TAB>end
+                    tsv_file.write(f'{utterance_id}\t{text}\t{wav_path}\t{start}\t{end}\n')
+
+    print('Wrote TSV dataset to:', tsv_path)
 
 def write_kaldi_dataset(podcasts, dataset_dir, use_sox_str=True, remove_non_printable_utterances=False):
+    """
+    Write out a dataset of episodes to <dataset_dir>
+    podcasts is a list of podcasts, where a podcast has the following structure:
+    podcast = {'title': str, 'episodes': list of episodes}
+                               |
+                               episode = {'transcript_file': str, 'segments': list of segments, 'authors': str}
+                                                                   |
+                                                                   segment = {'text': str, 'start': str, 'end': str}
+    The start and end time stamps should already be converted to Kaldi format, i.e. decimals in seconds (as a string), see above timestamp_to_seconds_float function.
+
+    We derive a sha1 hash from the filename as episode id and from author+podcast as author id (first 20 chars). Note that the final utterance must be prefixed by the speaker id:
+    > The main assumption is that the sorting order of utt2spk will stay the same, independently whether you will sort by speaker or utterance. We suggest making the utterances to be prefixed by the speaker ids -- that should resolve your issues
+    see https://groups.google.com/g/kaldi-help/c/n8es2XWVkec?pli=1
+    """
     ensure_dir(dataset_dir)
     with open(f'{dataset_dir}/text', 'w') as text_file, \
          open(f'{dataset_dir}/segments', 'w') as segments_file, \
@@ -197,6 +286,41 @@ def write_kaldi_dataset(podcasts, dataset_dir, use_sox_str=True, remove_non_prin
                   utt2spk_file.write(f'{utterance_id} {speaker_id}\n')
 
     print('Wrote Kaldi/Espnet dataset to:', dataset_dir)
+
+def write_subset_outputs(podcasts, subset, export_format, tsv_dataset_name,
+                         remove_non_printable_utterances=False,
+                         kaldi_root='data', raw_root='data/raw'):
+    """
+    Write both Kaldi and TSV (as requested) for a given subset.
+
+    Args:
+        podcasts: list of processed podcast dicts
+        subset: one of {'train','dev','test'}
+        export_format: 'kaldi' | 'tsv' | 'both'
+        tsv_dataset_name: prefix for TSV files (e.g., 'custom')
+        remove_non_printable_utterances: mirror filtering behavior
+        kaldi_root: base directory where data/<subset>/* is written
+        raw_root: base directory where TSV files live (raw_root/{name}_{subset}.tsv)
+    """
+    
+    print(f'{export_format=}, {kaldi_root=}, {raw_root=}')
+
+    # Kaldi output dir: data/<subset>/
+    if export_format in ('kaldi', 'both'):
+        kaldi_dir = os.path.join(kaldi_root, subset)
+        ensure_dir(kaldi_dir+'/test')
+        write_kaldi_dataset(
+            podcasts, kaldi_dir,
+            remove_non_printable_utterances=remove_non_printable_utterances)
+
+    # TSV output file: data/raw/<name>_<subset>.tsv
+    if export_format in ('tsv', 'both'):
+        tsv_path = os.path.join(raw_root, f'{tsv_dataset_name}_{subset}.tsv')
+        ensure_dir(tsv_path)
+        write_tsv_dataset(
+            podcasts, tsv_path,
+            remove_non_printable_utterances=remove_non_printable_utterances)
+
 
 # This joins consecutive segments at random, up to a specified max length.
 # The output segment list is shortened and the segments are longer.
@@ -304,15 +428,20 @@ def parse_vtt_segments(vtt_content, ignore_repeat_lines=3):
     return segments
 
 # process_podcast wrapper to catch exceptions in process_podcast
-def process_podcast_wrapper(server_api_url, api_secret_key, elem_title, language, audio_dataset_location, replace_audio_dataset_location, change_audio_fileending, file_format, max_num_segments, max_time_segment):
+def process_podcast_wrapper(server_api_url, api_secret_key, elem_title, language, audio_dataset_location,
+                            replace_audio_dataset_location, change_audio_fileending, file_format,
+                            max_num_segments, max_time_segment, min_time_episode):
     try:
-        return process_podcast(server_api_url, api_secret_key, elem_title, language, audio_dataset_location, replace_audio_dataset_location, change_audio_fileending, file_format, max_num_segments, max_time_segment)
+        return process_podcast(server_api_url, api_secret_key, elem_title, language, audio_dataset_location,
+                               replace_audio_dataset_location, change_audio_fileending, file_format,
+                               max_num_segments, max_time_segment, min_time_episode)
     except:
         print('Warning: error in ', elem_title, 'ignoring entire podcast...')
         traceback.print_exc()
 
 # Process all episodes of a particular podcast
-def process_podcast(server_api_url, api_secret_key, title, language, audio_dataset_location='', replace_audio_dataset_location='', change_audio_fileending='', file_format='vtt', max_num_segments=15, max_time_segment=None):
+def process_podcast(server_api_url, api_secret_key, title, language, audio_dataset_location='', replace_audio_dataset_location='',
+                    change_audio_fileending='', file_format='vtt', max_num_segments=15, max_time_segment=None, min_time_episode=3.0):
 
     request_url = f"{server_api_url}/get_episode_list/{api_secret_key}"
     data = {'podcast_title': title}
@@ -331,6 +460,10 @@ def process_podcast(server_api_url, api_secret_key, title, language, audio_datas
         if 'language' not in episode:
             print('WARNING: Malformed episode, no language field (skipping):', episode)
             continue
+        if 'duration' not in episode:
+            print('WARNING: Malformed episode, no duration field (skipping):', episode)
+            continue
+
         try:
             print('parsing:', episode['episode_title'])
 
@@ -342,6 +475,9 @@ def process_podcast(server_api_url, api_secret_key, title, language, audio_datas
             if episode['transcript_file_url']=='':
                 print('Warning, ignoring empty episode url.')
                 continue
+
+            if episode['duration']<min_time_episode:
+                print("Warning, ignoring short episode with {episode['duration']}s duration. Required min_duration={min_time_episode}s!")
 
             if not language == '*':
                 if not episode['language'] == language:
@@ -393,7 +529,9 @@ def process_podcast(server_api_url, api_secret_key, title, language, audio_datas
 
 # Divide dataset into train/dev/test and start processing the podcasts
 def process(server_api_url, api_secret_key, dev_n=10, test_n=10, test_dev_episodes_threshold=10, language='en',
-                                     audio_dataset_location='', replace_audio_dataset_location='', change_audio_fileending='', file_format='vtt', remove_non_printable_utterances=False, max_num_segments=15, max_time_segment=None):
+                                     audio_dataset_location='', replace_audio_dataset_location='', change_audio_fileending='', file_format='vtt',
+                                     remove_non_printable_utterances=False, max_num_segments=15, max_time_segment=None, min_time_episode=3.0,
+                                     export_format='kaldi', tsv_dataset_name='custom'):
 
     request_url = f"{server_api_url}/get_podcast_list/{language}/{api_secret_key}"
     response = requests.get(request_url)
@@ -419,32 +557,41 @@ def process(server_api_url, api_secret_key, dev_n=10, test_n=10, test_dev_episod
     # create dev set in parallel
     dev_podcasts = []
     with concurrent.futures.ProcessPoolExecutor() as executor:
-        futures = [executor.submit(process_podcast, server_api_url, api_secret_key, elem['title'], language, audio_dataset_location, replace_audio_dataset_location, change_audio_fileending, file_format, max_num_segments, max_time_segment) for elem in dev_set]
+        futures = [executor.submit(process_podcast, server_api_url, api_secret_key, elem['title'], language,
+                                   audio_dataset_location, replace_audio_dataset_location, change_audio_fileending,
+                                   file_format, max_num_segments, max_time_segment, min_time_episode) for elem in dev_set]
 
         # Use the as_completed() function to iterate over the completed futures and retrieve their results
         for future in concurrent.futures.as_completed(futures):
             result = future.result()
             dev_podcasts.append(result)
 
-    write_kaldi_dataset(dev_podcasts, 'data/dev/', remove_non_printable_utterances=remove_non_printable_utterances)
+    # DEV
+    write_subset_outputs(dev_podcasts, 'dev', export_format, tsv_dataset_name,
+        remove_non_printable_utterances=remove_non_printable_utterances) 
 
     # create test set in parallel
     test_podcasts = []
     with concurrent.futures.ProcessPoolExecutor() as executor:
-        futures = [executor.submit(process_podcast, server_api_url, api_secret_key, elem['title'], language, audio_dataset_location, replace_audio_dataset_location, change_audio_fileending, file_format, max_num_segments, max_time_segment) for elem in test_set]
+        futures = [executor.submit(process_podcast, server_api_url, api_secret_key, elem['title'], language,
+                                   audio_dataset_location, replace_audio_dataset_location, change_audio_fileending,
+                                   file_format, max_num_segments, max_time_segment, min_time_episode) for elem in test_set]
 
         for future in concurrent.futures.as_completed(futures):
             result = future.result()
             test_podcasts.append(result)
 
-    write_kaldi_dataset(test_podcasts, 'data/test/', remove_non_printable_utterances=remove_non_printable_utterances)
+    # TEST
+    write_subset_outputs(test_podcasts, 'test', export_format, tsv_dataset_name,
+        remove_non_printable_utterances=remove_non_printable_utterances)
 
     # create train set in parallel
     train_podcasts = []
 
     with concurrent.futures.ProcessPoolExecutor() as executor:
         podcast_futures = [executor.submit(process_podcast_wrapper, server_api_url, api_secret_key, elem['title'], language,
-                           audio_dataset_location, replace_audio_dataset_location, change_audio_fileending, file_format, max_num_segments, max_time_segment) for elem in train_set]
+                                           audio_dataset_location, replace_audio_dataset_location, change_audio_fileending,
+                                           file_format, max_num_segments, max_time_segment, min_time_episode) for elem in train_set]
         try:
             for future in concurrent.futures.as_completed(podcast_futures):
                 podcast = future.result()
@@ -456,7 +603,10 @@ def process(server_api_url, api_secret_key, dev_n=10, test_n=10, test_dev_episod
                 future.cancel()
             concurrent.futures.wait(podcast_futures)
             sys.exit(-1)
-    write_kaldi_dataset(train_podcasts, 'data/train/', remove_non_printable_utterances=remove_non_printable_utterances)
+    
+    # TRAIN
+    write_subset_outputs(train_podcasts, 'train', export_format, tsv_dataset_name,
+        remove_non_printable_utterances=remove_non_printable_utterances)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Create a dataset (Kaldi format) with the server.py API')
@@ -471,6 +621,11 @@ if __name__ == '__main__':
                         action='store_true', default=False)
     parser.add_argument('--max-num-segments', default=15, dest='max_num_segments', help='Maximum number of segments to join consecutively', type=int)
     parser.add_argument('--max-time-segment', default=None, dest='max_time_segment', help='Maximum time in seconds for a combined segment', type=float)
+    parser.add_argument('--min-time-episode', default=3.0, dest='min_time_episode', help='Episodes shorter than this value (in seconds) are ignored.', type=float)
+    
+    parser.add_argument('--export-format', choices=['kaldi', 'tsv', 'both'], default='kaldi', type=str, help='Which dataset format(s) to write.')
+    parser.add_argument('--tsv-dataset-name', default='custom', type=str, help='Prefix for TSV files in data/raw/, e.g., custom_train.tsv and custom_dev.tsv.')
+
     parser.add_argument('-y', '--yes', dest='auto_confirm', help='Bypass the confirmation prompt',
                                             action='store_true', default=False)
 
@@ -500,6 +655,10 @@ if __name__ == '__main__':
     print(f"Remove non-printable utterances: {args.remove_non_printable_utterances}")
     print(f"Max number of segments to join: {args.max_num_segments}")
     print(f"Max time for a combined segment: {args.max_time_segment}")
+    print(f"Min time for an episode: {args.min_time_episode}")
+    print(f"Export format: {args.export_format}")
+    if args.export_format == 'tsv' or args.export_format == 'both':
+        print(f"TSV dataset name: {args.tsv_dataset_name}")
 
     # Confirm before proceeding
     if not args.auto_confirm:
@@ -511,4 +670,7 @@ if __name__ == '__main__':
     exclusion_dict = create_exclusion_dict(ex_file_path_lang)
 
     process(server_api_url, api_secret_key, args.dev_n, args.test_n, args.test_dev_episodes_threshold, language,
-            audio_dataset_location, replace_audio_dataset_location, change_audio_fileending, file_format=file_format, remove_non_printable_utterances=args.remove_non_printable_utterances, max_num_segments=args.max_num_segments, max_time_segment=args.max_time_segment)
+            audio_dataset_location, replace_audio_dataset_location, change_audio_fileending, file_format=file_format,
+            remove_non_printable_utterances=args.remove_non_printable_utterances, max_num_segments=args.max_num_segments,
+            max_time_segment=args.max_time_segment, min_time_episode=args.min_time_episode, export_format=args.export_format,
+            tsv_dataset_name=args.tsv_dataset_name)
