@@ -33,6 +33,8 @@ def connect_to_db(database, user, password, host='127.0.0.1', port='5432'):
                                       port = port,
                                       database = database)
 
+        mct_connection.autocommit = True   
+
         mct_cursor = mct_connection.cursor()
 
         # Print PostgreSQL version
