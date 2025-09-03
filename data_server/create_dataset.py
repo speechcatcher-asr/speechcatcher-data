@@ -542,6 +542,11 @@ def process(server_api_url, api_secret_key, dev_n=10, test_n=10, test_dev_episod
     print('Test_n:', test_n)
     print('test_dev_episodes_threshold:', test_dev_episodes_threshold)
 
+    if 'error' in podcast_list:
+        print(podcast_list)
+        print('Looks like there was a problem fetching the podcast list through the speechcatcher-data API. I recommend restarting the speechcatcher-data server.')
+        sys.exit(-1)
+
     podcast_list_test_dev_pool = [podcast for podcast in podcast_list if (podcast['count'] < test_dev_episodes_threshold)]
 
     dev_set = random.sample(podcast_list_test_dev_pool, dev_n)
