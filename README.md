@@ -1,14 +1,18 @@
 # Speechcatcher-data
 
-Speechcatcher-data is a collection of tools and scripts to mass transcribe audio data with Whisper or similar big teacher models and to generate datasets for ASR training datasets in Kaldi format. With Speechcatcher-data you can easily crawl and process very large quantities of raw speech data. You can then use the generated transcriptions to export it as an ASR dataset that you use to train new (and maybe more efficient!) student models. Currently, the focus is on generating training data for single language ASR models. Processing should be language independant, you may only need to make a few changes to the unicode character filtering step. 
+Speechcatcher-data is a collection of tools and scripts to mass transcribe audio data with Whisper or similar big teacher models and to generate datasets for ASR and TTS training (Kaldi format or TSV format export). With Speechcatcher-data you can easily crawl and process vast quantities of raw speech data. You can then use the generated transcriptions to export it as a parallel speech dataset that you use to train new (and maybe more efficient!) student models. Currently, the focus is on generating training data for single language ASR and TTS models. Processing is largely language independant, you may only need to make a few changes to the unicode character filtering step when adding a new language. Extensive filtering can be applied to remove hallucinations of a teacher model.
 
 Here is an overview over the architecture:
 
 ![Speechcatcher-data architecture](https://raw.githubusercontent.com/speechcatcher-asr/speechcatcher-data/main/architecture.svg)
 
+Speechcatcher-data also includes a small mini dashboard, where you can monitor progress:
+
+![Speechcatcher-data stats](https://raw.githubusercontent.com/speechcatcher-asr/speechcatcher-data/main/stats_screenshot.png)
+
 # Data server
 
-The data server allows to store and access transcripts. For example when mass downloading and transcribing podcasts in parallel, it can feed workers with new episodes. The output transcripts can then be stored in a centralized database while there may be many worker nodes on different computers that transcribe the data.
+The data server allows to store and access transcripts. For example when mass downloading and transcribing podcasts in parallel, it can feed workers with new episodes. The output transcripts can then be stored in a centralized database while there may be many worker nodes on different remote computers that transcribe the data.
 
 ## Install requirements
 
